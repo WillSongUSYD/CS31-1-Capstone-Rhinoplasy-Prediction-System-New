@@ -1,0 +1,97 @@
+# ===== Python =====
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+venv/
+.nodeenv/
+*.egg-info/
+.coverage
+htmlcov/
+
+# ===== macOS / editor =====
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ===== Node / Frontend =====
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ===== PATIENT DATA (NEVER COMMIT) =====
+# Raw WhatsApp / source images
+CS31_Rhioplasty_Outcome_Prediction/
+data/raw_cache/
+
+# All derived image datasets (contain patient faces)
+artifacts/dataset/pairs_256/
+artifacts/dataset/pairs_full/
+artifacts/dataset/pairs_aligned_256/
+artifacts/dataset/pairs_aligned_512/
+artifacts/dataset/nose_roi_128/
+artifacts/dataset/nose_roi_256/
+artifacts/dataset/nose_roi_512/
+artifacts/dataset/masks_256/
+artifacts/dataset/masks_512/
+
+# Runtime user data
+data/history.sqlite3
+data/history.sqlite3-shm
+data/history.sqlite3-wal
+
+# ===== Generated / derived artifacts =====
+artifacts/predictions/
+artifacts/eval/
+out/
+
+# ===== Model checkpoints (too large for git, regenerable) =====
+models/outcome/
+models/outcome_v1_backup/
+models/outcome_v2_128_backup/
+models/outcome_v2_512_bad/
+models/face_landmarker.task
+
+# ===== Transient / experimental =====
+tmp/
+!tmp/deploy/
+!tmp/eval_nose_models.py
+tmp/*.jpg
+tmp/*.jpeg
+tmp/*.png
+tmp/*.tar.gz
+tmp/*.log
+tmp/train_logs/
+tmp/review_500/
+tmp/pdfs/
+tmp/report_assets/
+tmp/report_images/
+
+# ===== Reports with embedded patient images =====
+reports/*.docx
+reports/*.jpg
+reports/*.jpeg
+reports/*.png
+reports/*.pdf
+
+# ===== Logs =====
+*.log
+
+# ===== Env / secrets =====
+.env
+.env.local
+*.key
+*.pem
+
+# ===== Leaks original WhatsApp filenames (patient PII) =====
+data/manifest.csv
+
+# ===== Local Claude Code state =====
+.claude/
+
+# ===== Backend runtime =====
+data/history.sqlite3*

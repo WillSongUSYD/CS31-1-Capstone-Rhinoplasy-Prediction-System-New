@@ -1,0 +1,258 @@
+import argparse
+import csv
+import tempfile
+from pathlib import Path
+from typing import Optional
+
+import lpips
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import torch
+from PIL import Image
+from pytorch_fid import fid_score
+from skimage.metrics import structural_similarity
+from torch.utils.data import DataLoader
+from torchvision.utils import save_image
+from tqdm import tqdm
+
+from .config import BENCHMARK_PATH, EVAL_DIR, MODELS_DIR
+from .data import PairImageDataset, denormalize
+from .landmarks import detect_landmarks
+from .runtime import checkpoint_path, get_device, load_model_from_checkpoint, model_output
+
+
+def tensor_to_image(tensor: torch.Tensor) -> Image.Image:
+    tensor = denormalize(tensor).clamp(0, 1)
+    array = (tensor.permute(1, 2, 0).numpy() * 255).astype("uint8")
+    return Image.fromarray(array)
+
+
+def _heuristic_roi_box(width: int, height: int) -> tuple:
+    """Fallback proportional ROI for profile views when landmark detection fails."""
+    return (int(width * 0.3), int(height * 0.18),
+            int(width * 0.75), int(height * 0.7))
+
+
+def detect_roi_box(anchor_image: Image.Image) -> tuple:
+    """Detect nose ROI bounding box on an anchor image (typically the reference/target).
+
+    Returns (x1, y1, x2, y2) pixel coordinates. Uses landmark detection when
+    available, falls back to a heuristic proportional crop otherwise.
+    """
+    result = detect_landmarks(anchor_image)
+    if result.face_detected and result.nose_roi:
+        return result.nose_roi
+    return _heuristic_roi_box(*anchor_image.size)
+
+
+def apply_roi_box(image: Image.Image, box: tuple, output_size: tuple = (96, 96)) -> Image.Image:
+    """Crop `image` using a pre-computed ROI box and resize to fixed output size.
+
+    Using the same box for pred and target keeps ROI metrics comparable and
+    avoids double landmark detection per sample.
+    """
+    return image.crop(box).resize(output_size, Image.Resampling.LANCZOS)
+
+
+def roi_crop(image: Image.Image, output_size: tuple = (96, 96)) -> Image.Image:
+    """Single-image ROI crop (kept for backwards compatibility). Prefer
+    detect_roi_box + apply_roi_box pair so pred and target share coordinates.
+    """
+    return apply_roi_box(image, detect_roi_box(image), output_size)
+
+
+def compute_ssim(pred: Image.Image, target: Image.Image) -> float:
+    # np.asarray is ~100x faster than list(getdata()) + tensor roundtrip
+    pred_arr = np.asarray(pred.convert("RGB"), dtype=np.float32)
+    target_arr = np.asarray(target.convert("RGB"), dtype=np.float32)
+    return float(structural_similarity(pred_arr, target_arr, channel_axis=2, data_range=255))
+
+
+def save_grid(rows: list[tuple[Image.Image, Image.Image, Image.Image]], destination: Path) -> None:
+    columns = 3
+    figure, axes = plt.subplots(len(rows), columns, figsize=(9, 3 * max(1, len(rows))))
+    if len(rows) == 1:
+        axes = [axes]
+    titles = ["Pre-op", "Real Post-op", "Generated Post-op"]
+    for row_index, row in enumerate(rows):
+        for col_index, image in enumerate(row):
+            axes[row_index][col_index].imshow(image)
+            axes[row_index][col_index].axis("off")
+            if row_index == 0:
+                axes[row_index][col_index].set_title(titles[col_index])
+    figure.tight_layout()
+    figure.savefig(destination, dpi=160)
+    plt.close(figure)
+
+
+def append_benchmark_row(payload: dict) -> None:
+    BENCHMARK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    exists = BENCHMARK_PATH.exists()
+    with BENCHMARK_PATH.open("a", newline="", encoding="utf-8") as fp:
+        writer = csv.DictWriter(
+            fp,
+            fieldnames=[
+                "model",
+                "checkpoint",
+                "sample_count",
+                "fid_dims",
+                "ssim",
+                "roi_ssim",
+                "lpips",
+                "roi_lpips",
+                "fid",
+            ],
+        )
+        if not exists:
+            writer.writeheader()
+        writer.writerow(payload)
+
+
+def write_manual_review_template(model_name: str, sample_ids: list[str]) -> None:
+    path = EVAL_DIR / f"{model_name}_manual_review_template.csv"
+    with path.open("w", newline="", encoding="utf-8") as fp:
+        writer = csv.DictWriter(
+            fp,
+            fieldnames=[
+                "sample_id",
+                "visual_credibility",
+                "nasal_naturalness",
+                "artifact_severity",
+                "notes",
+            ],
+        )
+        writer.writeheader()
+        for sample_id in sample_ids:
+            writer.writerow(
+                {
+                    "sample_id": sample_id,
+                    "visual_credibility": "",
+                    "nasal_naturalness": "",
+                    "artifact_severity": "",
+                    "notes": "",
+                }
+            )
+
+
+def evaluate_model(model_name: str, limit: Optional[int], checkpoint_name: str, fid_dims: int) -> dict:
+    device = get_device()
+    dataset = PairImageDataset(split="test", limit=limit)
+    loader = DataLoader(dataset, batch_size=4, shuffle=False, num_workers=0)
+    model, _ = load_model_from_checkpoint(model_name, checkpoint_name=checkpoint_name, device=device)
+
+    metric_lpips = lpips.LPIPS(net="alex").to(device)
+    model_dir = EVAL_DIR / model_name
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    preview_rows = []
+    sample_ids = []
+    ssim_scores = []
+    roi_ssim_scores = []
+    lpips_scores = []
+    roi_lpips_scores = []
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        fake_dir = Path(temp_dir) / "fake"
+        real_dir = Path(temp_dir) / "real"
+        fake_dir.mkdir(parents=True, exist_ok=True)
+        real_dir.mkdir(parents=True, exist_ok=True)
+
+        with torch.no_grad():
+            for batch in tqdm(loader, desc=f"Evaluating {model_name}"):
+                pre = batch["pre"].to(device)
+                post = batch["post"].to(device)
+                generated = model_output(model_name, model, pre)
+
+                lp = metric_lpips(generated, post).mean().item()
+                # Proportional ROI crop for tensor-level LPIPS so the slice
+                # adapts to any image size (128 for nose-only, 256 for full-face).
+                # Covers the central 50% horizontally (25%-75%) and the
+                # upper-middle 52% vertically (18%-70%) - the region where
+                # the nose typically sits in a profile-view face.
+                _, _, h_t, w_t = generated.shape
+                y1_t = int(h_t * 0.18)
+                y2_t = int(h_t * 0.70)
+                x1_t = int(w_t * 0.25)
+                x2_t = int(w_t * 0.75)
+                roi_generated = generated[:, :, y1_t:y2_t, x1_t:x2_t]
+                roi_target = post[:, :, y1_t:y2_t, x1_t:x2_t]
+                roi_lp = metric_lpips(roi_generated, roi_target).mean().item()
+                lpips_scores.append(lp)
+                roi_lpips_scores.append(roi_lp)
+
+                for index in range(pre.shape[0]):
+                    sid = batch["sample_id"][index]
+                    sample_ids.append(sid)
+                    pred_image = tensor_to_image(generated[index].cpu())
+                    target_image = tensor_to_image(post[index].cpu())
+                    pre_image = tensor_to_image(pre[index].cpu())
+                    save_image(denormalize(generated[index]), fake_dir / f"{sid}.png")
+                    save_image(denormalize(post[index]), real_dir / f"{sid}.png")
+                    ssim_scores.append(compute_ssim(pred_image, target_image))
+                    # Use the TARGET image as anchor for ROI box, then apply the
+                    # same coordinates to the prediction. This keeps roi_ssim
+                    # comparable across samples and avoids pred-side detection
+                    # failing on distorted generations.
+                    roi_box = detect_roi_box(target_image)
+                    ssim_roi = compute_ssim(
+                        apply_roi_box(pred_image, roi_box),
+                        apply_roi_box(target_image, roi_box),
+                    )
+                    roi_ssim_scores.append(ssim_roi)
+                    if len(preview_rows) < 8:
+                        preview_rows.append((pre_image, target_image, pred_image))
+
+        # pytorch-fid accepts torch-style device strings. Fall back to CPU on MPS
+        # because pytorch-fid's Inception weights are not fully MPS-compatible
+        # in all torchvision versions.
+        fid_device = "cuda" if device.type == "cuda" else "cpu"
+        fid_value = fid_score.calculate_fid_given_paths(
+            [str(real_dir), str(fake_dir)],
+            batch_size=4,
+            device=fid_device,
+            dims=fid_dims,
+        )
+
+    grid_path = model_dir / "qualitative_grid.png"
+    save_grid(preview_rows, grid_path)
+    write_manual_review_template(model_name, sample_ids[:50])
+
+    result = {
+        "model": model_name,
+        "checkpoint": str(checkpoint_path(model_name, checkpoint_name)),
+        "sample_count": len(sample_ids),
+        "fid_dims": fid_dims,
+        "ssim": sum(ssim_scores) / max(1, len(ssim_scores)),
+        "roi_ssim": sum(roi_ssim_scores) / max(1, len(roi_ssim_scores)),
+        "lpips": sum(lpips_scores) / max(1, len(lpips_scores)),
+        "roi_lpips": sum(roi_lpips_scores) / max(1, len(roi_lpips_scores)),
+        "fid": float(fid_value),
+    }
+    append_benchmark_row(result)
+    return result
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Evaluate trained outcome models.")
+    parser.add_argument("--model", default="all", help="Model to evaluate or 'all'.")
+    parser.add_argument("--limit", type=int, default=None)
+    parser.add_argument("--checkpoint", default="best.pt")
+    parser.add_argument("--fid-dims", type=int, default=2048)
+    args = parser.parse_args()
+
+    if args.model == "all":
+        model_dirs = [path.name for path in (MODELS_DIR / "outcome").glob("*") if path.is_dir()]
+        model_names = sorted(model_dirs)
+    else:
+        model_names = [args.model]
+
+    results = []
+    for model_name in model_names:
+        results.append(evaluate_model(model_name, args.limit, args.checkpoint, args.fid_dims))
+
+    print(pd.DataFrame(results).to_string(index=False))
+
+
+if __name__ == "__main__":
+    main()

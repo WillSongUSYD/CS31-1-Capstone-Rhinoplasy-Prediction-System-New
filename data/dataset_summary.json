@@ -1,0 +1,92 @@
+{
+  "source_directory": "/Applications/CS31/CS31_Rhioplasty_Outcome_Prediction",
+  "total_records": 2568,
+  "canonical_records": 833,
+  "duplicate_records": 1735,
+  "duplicate_breakdown": {
+    "canonical": 833,
+    "duplicate_name": 1072,
+    "duplicate_phash": 511,
+    "near_duplicate_phash_4": 76,
+    "near_duplicate_phash_6": 13,
+    "near_duplicate_phash_2": 12,
+    "near_duplicate_phash_8": 27,
+    "near_duplicate_phash_10": 13,
+    "near_duplicate_phash_12": 11
+  },
+  "top_image_sizes": [
+    {
+      "size": [
+        1200,
+        1600
+      ],
+      "count": 2163
+    },
+    {
+      "size": [
+        960,
+        1280
+      ],
+      "count": 66
+    },
+    {
+      "size": [
+        1080,
+        1080
+      ],
+      "count": 16
+    },
+    {
+      "size": [
+        1080,
+        929
+      ],
+      "count": 12
+    },
+    {
+      "size": [
+        1080,
+        928
+      ],
+      "count": 11
+    },
+    {
+      "size": [
+        1080,
+        926
+      ],
+      "count": 11
+    },
+    {
+      "size": [
+        1080,
+        919
+      ],
+      "count": 9
+    },
+    {
+      "size": [
+        1080,
+        921
+      ],
+      "count": 9
+    },
+    {
+      "size": [
+        1066,
+        1600
+      ],
+      "count": 8
+    },
+    {
+      "size": [
+        1080,
+        920
+      ],
+      "count": 8
+    }
+  ],
+  "annotation_template": "/Applications/CS31/data/annotation_template.csv",
+  "cases_template": "/Applications/CS31/data/cases.csv",
+  "notes_template": "/Applications/CS31/data/notes.csv"
+}
