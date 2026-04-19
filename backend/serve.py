@@ -3,10 +3,12 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
+from urllib.parse import urlparse
 
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,9 +30,51 @@ VALID_MODEL_NAMES = {
     "autoencoder_nose", "pix2pix_nose", "cyclegan_nose", "diffusion_nose",
 }
 
+
+def _parse_origins(raw: str) -> List[str]:
+    """Parse a comma-separated CORS origin list, rejecting invalid entries.
+
+    Rules:
+      - Reject wildcard `*` outright (combining wildcard with allow_credentials
+        is a browser-level error and is dangerous even without credentials).
+      - Reject blank / whitespace-only entries.
+      - Require http/https scheme + netloc, no path/query/fragment.
+    Rejected entries are logged at WARNING level and skipped; we never raise,
+    so a stray malformed entry won't prevent the server from starting.
+    """
+    valid: List[str] = []
+    for entry in (raw or "").split(","):
+        origin = entry.strip()
+        if not origin:
+            continue
+        if origin == "*":
+            logger.warning("Rejecting wildcard '*' CORS origin (unsafe with credentials)")
+            continue
+        try:
+            parsed = urlparse(origin)
+        except ValueError:
+            logger.warning("Rejecting malformed CORS origin %r", origin)
+            continue
+        if parsed.scheme not in ("http", "https"):
+            logger.warning("Rejecting CORS origin %r: scheme must be http/https", origin)
+            continue
+        if not parsed.netloc:
+            logger.warning("Rejecting CORS origin %r: missing host", origin)
+            continue
+        # An origin is scheme://host[:port] only - a path/query/fragment is
+        # invalid per the CORS spec.
+        if parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+            logger.warning("Rejecting CORS origin %r: must not contain path/query/fragment", origin)
+            continue
+        # Canonicalise: drop trailing slash if present.
+        canonical = f"{parsed.scheme}://{parsed.netloc}"
+        valid.append(canonical)
+    return valid
+
+
 # CORS: read allowed origins from env var, default to common dev origins
 _cors_env = os.getenv("CS31_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
-CORS_ORIGINS = [o.strip() for o in _cors_env.split(",") if o.strip()]
+CORS_ORIGINS = _parse_origins(_cors_env)
 
 app = FastAPI(title="CS31 Rhinoplasty Outcome Prediction")
 app.add_middleware(
@@ -115,11 +159,23 @@ async def predict(
     if not file_bytes:
         raise HTTPException(status_code=400, detail="Empty upload.")
     try:
-        upload_path = save_upload(file_bytes, file.filename or "input.png")
+        # save_upload does PIL decoding + disk I/O; off-load so we don't
+        # block the event loop for large uploads.
+        upload_path = await run_in_threadpool(
+            save_upload, file_bytes, file.filename or "input.png"
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
-        result = run_prediction(upload_path=upload_path, model_name=model_name, paired_input=paired_input)
+        # run_prediction does GPU inference + image encoding, potentially
+        # hundreds of ms to seconds. Off-load so concurrent requests aren't
+        # blocked.
+        result = await run_in_threadpool(
+            run_prediction,
+            upload_path=upload_path,
+            model_name=model_name,
+            paired_input=paired_input,
+        )
     except FileNotFoundError as exc:
         logger.warning("Checkpoint not found: %s", exc)
         raise HTTPException(status_code=404, detail="Model checkpoint not found.") from exc
@@ -127,7 +183,9 @@ async def predict(
         logger.exception("Prediction failed")
         raise HTTPException(status_code=500, detail="Internal error during prediction.")
 
-    insert_history(
+    # insert_history blocks on SQLite I/O; off-load.
+    await run_in_threadpool(
+        insert_history,
         {
             "created_at": datetime.now(timezone.utc).isoformat(),
             "model_name": model_name,
@@ -138,7 +196,7 @@ async def predict(
             "generated_post_path": str(result["generated_post_path"]),
             "status": "completed",
             "notes": "",
-        }
+        },
     )
 
     return PredictResponse(

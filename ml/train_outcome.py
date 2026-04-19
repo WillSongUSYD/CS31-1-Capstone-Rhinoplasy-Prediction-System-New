@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 from pathlib import Path
 from typing import Optional
 
@@ -20,16 +21,31 @@ from .runtime import (
 
 
 def validation_l1(model_name: str, model, loader: DataLoader, device: torch.device) -> float:
+    """Weighted-by-sample mean L1 over the loader.
+
+    Previous implementation averaged per-batch means, which is only correct
+    when all batches have identical size. The final batch is typically
+    smaller and was weighted too heavily (or too lightly) under that scheme.
+    """
     model.eval()
     criterion = nn.L1Loss()
-    losses = []
+    total_loss = 0.0
+    total_samples = 0
     with torch.no_grad():
         for batch in loader:
             pre = batch["pre"].to(device)
             post = batch["post"].to(device)
             generated = model_output(model_name, model, pre)
-            losses.append(float(criterion(generated, post).detach().cpu()))
-    return sum(losses) / max(1, len(losses))
+            batch_n = pre.shape[0]
+            batch_loss = float(criterion(generated, post).detach().cpu())
+            total_loss += batch_loss * batch_n
+            total_samples += batch_n
+    # Empty loader: returning 0.0 would make every epoch falsely look like
+    # the new best and thrash the saved "best.pt". Return +inf so the
+    # best-save guard in train() refuses to act on a meaningless score.
+    if total_samples == 0:
+        return float("inf")
+    return total_loss / total_samples
 
 
 def save_preview(model_name: str, model, loader: DataLoader, device: torch.device) -> None:
@@ -183,7 +199,10 @@ def train(model_name: str, epochs: int, batch_size: int, lr: float, limit: Optio
             "image_size": image_size,
         }
         save_checkpoint(model_name, checkpoint_payload, name="latest.pt")
-        if val_score < best_val:
+        # Guard against NaN / inf (e.g. empty val loader returns inf by
+        # design, and pathological batches can produce NaN) so we never
+        # overwrite best.pt with a meaningless score.
+        if math.isfinite(val_score) and val_score < best_val:
             best_val = val_score
             save_checkpoint(model_name, checkpoint_payload, name="best.pt")
 

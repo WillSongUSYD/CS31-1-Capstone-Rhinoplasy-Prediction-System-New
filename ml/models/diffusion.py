@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 
 import torch
@@ -15,13 +16,23 @@ class DiffusionLosses:
 class TimeEmbedding(nn.Module):
     def __init__(self, dim: int):
         super().__init__()
+        # Require an even dim >=4 so half is >=2 and the sin/cos concat gives
+        # back exactly `dim` features. Avoids the `(half - 1) == 0` div-by-zero
+        # that used to silently produce NaNs at dim=2.
+        assert dim >= 4 and dim % 2 == 0, f"TimeEmbedding dim must be even and >=4 (got {dim})"
         self.net = nn.Sequential(nn.Linear(dim, dim), nn.SiLU(), nn.Linear(dim, dim))
         self.dim = dim
+        half = dim // 2
+        # Precompute frequencies once as a non-parameter buffer; moves with
+        # .to(device) but has no gradient and isn't re-allocated every forward.
+        freq = torch.exp(
+            torch.arange(half, dtype=torch.float32)
+            * -(math.log(10000.0) / max(half - 1, 1))
+        )
+        self.register_buffer("freq", freq, persistent=False)
 
     def forward(self, t: torch.Tensor) -> torch.Tensor:
-        half = self.dim // 2
-        freq = torch.exp(torch.arange(half, device=t.device) * -(torch.log(torch.tensor(10000.0, device=t.device)) / (half - 1)))
-        args = t[:, None].float() * freq[None]
+        args = t[:, None].float() * self.freq[None]
         emb = torch.cat([torch.sin(args), torch.cos(args)], dim=1)
         return self.net(emb)
 
@@ -45,13 +56,23 @@ class TinyDiffusionUNet(nn.Module):
         if condition.shape[-1] != 64:
             condition = F.interpolate(condition, size=(64, 64), mode="bilinear", align_corners=False)
         x = torch.cat([noisy_target, condition], dim=1)
-        x = self.input(x)
-        x1 = self.down1(x)
+        # x0 is the feature map AFTER the input projection (channels=C);
+        # x1 is the feature map AFTER down1 (channels=2C). We save both so
+        # the up path can sum them into the matching resolution/channels
+        # output. Sum-based skips (rather than concat) keep the existing
+        # conv widths unchanged while still giving the decoder access to
+        # the higher-res encoder features.
+        x0 = self.input(x)
+        x1 = self.down1(x0)
         x2 = self.down2(x1)
         time_emb = self.time_proj(self.time_mlp(timesteps)).view(timesteps.shape[0], -1, 1, 1)
         x_mid = self.mid(x2 + time_emb)
-        x = self.up1(x_mid)
-        x = self.up2(x)
+        # up1 upsamples x_mid to x1's resolution and produces 2C channels,
+        # matching x1 exactly so we can element-wise sum.
+        x = self.up1(x_mid) + x1
+        # up2 upsamples again to x0's resolution and produces C channels,
+        # matching x0 exactly so we can element-wise sum.
+        x = self.up2(x) + x0
         return self.out(x)
 
 

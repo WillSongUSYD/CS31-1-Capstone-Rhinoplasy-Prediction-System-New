@@ -1,12 +1,44 @@
 import contextlib
 import logging
+import os
 import sqlite3
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional
 
-from ml.config import DB_PATH, ensure_directories
+from ml.config import DB_PATH, PREDICTIONS_DIR, ensure_directories
 
 logger = logging.getLogger(__name__)
+
+
+def _to_relative(path: Optional[str]) -> Optional[str]:
+    """Convert an absolute path under PREDICTIONS_DIR to a relative one.
+
+    Returns the input unchanged if it's already relative, None, or points
+    outside PREDICTIONS_DIR (we can't safely shorten those).
+    """
+    if not path:
+        return path
+    p = Path(path)
+    if not p.is_absolute():
+        return str(p)
+    try:
+        return str(p.resolve().relative_to(PREDICTIONS_DIR.resolve()))
+    except (ValueError, OSError):
+        return path
+
+
+def _absolutize(path: Optional[str]) -> Optional[str]:
+    """Re-attach PREDICTIONS_DIR to a stored relative path.
+
+    Absolute paths (legacy records) are returned unchanged so both formats
+    coexist during/after migration.
+    """
+    if not path:
+        return path
+    p = Path(path)
+    if p.is_absolute():
+        return str(p)
+    return str(PREDICTIONS_DIR / p)
 
 
 SCHEMA = """
@@ -25,6 +57,23 @@ CREATE TABLE IF NOT EXISTS prediction_history (
 """
 
 _JOURNAL_MODE_APPLIED = False
+# Declared alongside _JOURNAL_MODE_APPLIED so both exist before the
+# at-fork handler is registered below (the handler mutates both).
+_PATHS_MIGRATED = False
+
+
+def _reset_journal_flag_after_fork() -> None:
+    """Reset module-level one-shot flags in forked workers so they reapply
+    the PRAGMAs and path migration on their first connection. Both operations
+    are idempotent, so re-running them in a child is harmless.
+    """
+    global _JOURNAL_MODE_APPLIED, _PATHS_MIGRATED
+    _JOURNAL_MODE_APPLIED = False
+    _PATHS_MIGRATED = False
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_journal_flag_after_fork)
 
 
 def _apply_pragmas(conn: sqlite3.Connection) -> None:
@@ -51,6 +100,61 @@ def _apply_pragmas(conn: sqlite3.Connection) -> None:
         logger.warning("Failed to apply SQLite pragmas: %s", exc)
 
 
+def _migrate_paths_to_relative(conn: sqlite3.Connection) -> None:
+    """One-shot migration: rewrite absolute paths under PREDICTIONS_DIR to relative.
+
+    Idempotent (it's a no-op on rows already stored as relative paths) and
+    safe to call on every process start. Only paths demonstrably inside
+    PREDICTIONS_DIR are rewritten; rows that escaped the predictions dir
+    remain absolute so no data is lost.
+    """
+    global _PATHS_MIGRATED
+    if _PATHS_MIGRATED:
+        return
+    try:
+        pred_root = PREDICTIONS_DIR.resolve()
+        rows = conn.execute(
+            "SELECT id, input_path, pre_path, reference_post_path, generated_post_path "
+            "FROM prediction_history"
+        ).fetchall()
+        for row in rows:
+            updates: dict = {}
+            for col in ("input_path", "pre_path", "reference_post_path", "generated_post_path"):
+                original = row[col]
+                if not original:
+                    continue
+                if not Path(original).is_absolute():
+                    continue  # already relative
+                # Only shorten paths under PREDICTIONS_DIR - don't mangle
+                # anything that happens to live elsewhere on disk. Use
+                # relative_to instead of a string-prefix check to avoid
+                # "/foo/bar/predictions-backup" matching "/foo/bar/predictions".
+                try:
+                    resolved = Path(original).resolve()
+                except OSError:
+                    continue
+                try:
+                    resolved.relative_to(pred_root)
+                except ValueError:
+                    continue  # not under PREDICTIONS_DIR, keep absolute
+                new = _to_relative(original)
+                if new is not None and new != original:
+                    updates[col] = new
+            if updates:
+                set_clause = ", ".join(f"{k} = ?" for k in updates)
+                conn.execute(
+                    f"UPDATE prediction_history SET {set_clause} WHERE id = ?",
+                    (*updates.values(), row["id"]),
+                )
+        conn.commit()
+    except sqlite3.DatabaseError as exc:
+        logger.warning("Path migration skipped: %s", exc)
+    else:
+        # Only flip the one-shot flag on success so a partial/failed migration
+        # gets retried on the next connection instead of being marked done.
+        _PATHS_MIGRATED = True
+
+
 @contextlib.contextmanager
 def _connection():
     """Context-managed SQLite connection. Commits on success, rolls back on error."""
@@ -60,6 +164,7 @@ def _connection():
     try:
         _apply_pragmas(conn)
         conn.execute(SCHEMA)
+        _migrate_paths_to_relative(conn)
         conn.commit()
         yield conn
         conn.commit()
@@ -82,6 +187,8 @@ def connect() -> sqlite3.Connection:
 
 
 def insert_history(record: dict) -> int:
+    # Store paths relative to PREDICTIONS_DIR so the record survives moving
+    # the predictions directory (e.g. when deploying or backing up).
     with _connection() as conn:
         cursor = conn.execute(
             """
@@ -94,10 +201,10 @@ def insert_history(record: dict) -> int:
                 record["created_at"],
                 record["model_name"],
                 record["input_mode"],
-                record["input_path"],
-                record["pre_path"],
-                record.get("reference_post_path"),
-                record["generated_post_path"],
+                _to_relative(record["input_path"]),
+                _to_relative(record["pre_path"]),
+                _to_relative(record.get("reference_post_path")),
+                _to_relative(record["generated_post_path"]),
                 record["status"],
                 record.get("notes", ""),
             ),
@@ -115,4 +222,13 @@ def fetch_history() -> Iterable[dict]:
             ORDER BY id DESC
             """
         ).fetchall()
-    return [dict(row) for row in rows]
+    # Rehydrate paths to absolute on the way out so callers (e.g. the backend
+    # URL builder) don't need to know whether the row was stored relative
+    # or absolute.
+    result = []
+    for row in rows:
+        d = dict(row)
+        for col in ("input_path", "pre_path", "reference_post_path", "generated_post_path"):
+            d[col] = _absolutize(d.get(col))
+        result.append(d)
+    return result

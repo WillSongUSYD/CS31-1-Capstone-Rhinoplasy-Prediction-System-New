@@ -79,37 +79,45 @@ def generate_nose_mask(pil_image: Image.Image, target_size: int = 256) -> np.nda
     """
     mask = np.zeros((target_size, target_size), dtype=np.float32)
 
-    # Try MediaPipe for precise mask
+    # Try MediaPipe for precise mask. Use the process-wide singleton from
+    # ml.landmarks so we don't create+close a new native handler on every
+    # call (initialisation is ~100ms and leaks GL/TFLite resources under
+    # pressure). Do NOT close the singleton here - it's owned by the module.
     try:
         import mediapipe as mp
-        from .landmarks import _create_landmarker, NOSE_TIP, NOSE_BRIDGE_TOP, LEFT_ALA, RIGHT_ALA, LEFT_NOSTRIL, RIGHT_NOSTRIL, NOSE_BRIDGE_MID
+        from .landmarks import (
+            get_landmarker, _landmarker_lock, NOSE_TIP, NOSE_BRIDGE_TOP,
+            LEFT_ALA, RIGHT_ALA, LEFT_NOSTRIL, RIGHT_NOSTRIL, NOSE_BRIDGE_MID,
+        )
 
-        landmarker = _create_landmarker()
-        try:
-            img_arr = np.array(pil_image.convert("RGB"))
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_arr)
+        landmarker = get_landmarker()
+        img_arr = np.array(pil_image.convert("RGB"))
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_arr)
+        with _landmarker_lock:
             result = landmarker.detect(mp_image)
 
-            if result.face_landmarks:
-                lm = result.face_landmarks[0]
-                nose_indices = [NOSE_TIP, NOSE_BRIDGE_TOP, NOSE_BRIDGE_MID, LEFT_NOSTRIL, RIGHT_NOSTRIL, LEFT_ALA, RIGHT_ALA]
-                points = [(int(lm[i].x * target_size), int(lm[i].y * target_size)) for i in nose_indices]
+        if result.face_landmarks:
+            lm = result.face_landmarks[0]
+            nose_indices = [NOSE_TIP, NOSE_BRIDGE_TOP, NOSE_BRIDGE_MID, LEFT_NOSTRIL, RIGHT_NOSTRIL, LEFT_ALA, RIGHT_ALA]
+            points = [(int(lm[i].x * target_size), int(lm[i].y * target_size)) for i in nose_indices]
 
-                xs = [p[0] for p in points]
-                ys = [p[1] for p in points]
-                cx = int(np.mean(xs))
-                cy = int(np.mean(ys))
-                rx = max(int((max(xs) - min(xs)) * 0.8), 20)
-                ry = max(int((max(ys) - min(ys)) * 0.8), 20)
+            xs = [p[0] for p in points]
+            ys = [p[1] for p in points]
+            cx = int(np.mean(xs))
+            cy = int(np.mean(ys))
+            rx = max(int((max(xs) - min(xs)) * 0.8), 20)
+            ry = max(int((max(ys) - min(ys)) * 0.8), 20)
 
-                cv2.ellipse(mask, (cx, cy), (rx, ry), 0, 0, 360, 1.0, -1)
-                mask = cv2.GaussianBlur(mask, (21, 21), 7)
-                mask = mask / max(mask.max(), 1e-6)
-                return mask
-        finally:
-            landmarker.close()
+            cv2.ellipse(mask, (cx, cy), (rx, ry), 0, 0, 360, 1.0, -1)
+            mask = cv2.GaussianBlur(mask, (21, 21), 7)
+            mask = mask / max(mask.max(), 1e-6)
+            return mask
     except Exception:
-        pass
+        # A silent `pass` here used to hide MediaPipe init + detect failures,
+        # including missing .task files and GL issues. Log at debug so the
+        # heuristic fallback still works but the cause is observable when
+        # investigating why masks look wrong.
+        logger.debug("MediaPipe mask generation failed, using heuristic", exc_info=True)
 
     # Heuristic fallback for profile views
     # Nose is typically in center-right of face, middle height

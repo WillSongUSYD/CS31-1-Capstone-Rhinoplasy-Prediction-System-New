@@ -39,16 +39,30 @@ _MASK_BBOX_PAD_FRAC = 0.12  # same padding used when extracting training crops
 _MASK_GAUSS_KERNEL = (25, 25)
 _MASK_GAUSS_SIGMA = 9
 
-# Fork-safe InsightFace singleton (the ONNX runtime handle is not safe to share
-# across fork()-ed workers; we rebuild per-process on first use).
+# Fork-safe InsightFace singletons keyed by det_size. The ONNX runtime handle
+# is not safe to share across fork()-ed workers; we rebuild per-process on
+# first use. We key by det_size so the documented pass-1 (320) and pass-2
+# (640) detector sizes are actually different instances - the previous
+# implementation silently ignored the det_size argument on the second call.
 _app_lock = threading.Lock()
-_app_instance = None
+_app_instances: dict = {}  # det_size -> FaceAnalysis
 _app_pid: Optional[int] = None
 
 
 def _reset_after_fork():
-    global _app_instance, _app_pid, _app_lock
-    _app_instance = None
+    global _app_instances, _app_pid, _app_lock
+    # Neuter inherited FaceAnalysis instances before dropping our refs:
+    # Python may still hold them via GC and eventually run their finalizers,
+    # which would tear down the PARENT's ONNX runtime session. Clearing
+    # __dict__ removes the native-handle references so any later __del__
+    # call no-ops instead of double-freeing. Mirrors the same pattern used
+    # in ml/landmarks.py for MediaPipe FaceLandmarker.
+    for inst in list(_app_instances.values()):
+        try:
+            inst.__dict__.clear()
+        except Exception:
+            pass
+    _app_instances = {}
     _app_pid = None
     _app_lock = threading.Lock()
 
@@ -58,20 +72,21 @@ if hasattr(os, "register_at_fork"):
 
 
 def _get_face_app(det_size: int = 320):
-    """Return a per-process InsightFace FaceAnalysis singleton.
+    """Return a per-process InsightFace FaceAnalysis singleton for the given det_size.
 
-    `det_size` controls the detector input; we default to the fast 320 and
-    retry at 640 only on first-pass failure.
+    Separate instances are cached per det_size so pass 1 (320) and pass 2
+    (640) use different prepared detectors as documented.
     """
-    global _app_instance, _app_pid
+    global _app_instances, _app_pid
     pid = os.getpid()
-    if _app_instance is not None and _app_pid == pid:
-        return _app_instance
+    if _app_pid == pid and det_size in _app_instances:
+        return _app_instances[det_size]
     with _app_lock:
-        if _app_instance is not None and _app_pid == pid:
-            return _app_instance
-        # Inherited handle from parent -> discard, rebuild
-        _app_instance = None
+        if _app_pid == pid and det_size in _app_instances:
+            return _app_instances[det_size]
+        # Inherited handles from parent -> discard, rebuild
+        if _app_pid is not None and _app_pid != pid:
+            _app_instances = {}
         try:
             from insightface.app import FaceAnalysis  # lazy import
         except ImportError as exc:  # pragma: no cover
@@ -80,16 +95,20 @@ def _get_face_app(det_size: int = 320):
             ) from exc
         app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
         app.prepare(ctx_id=-1, det_size=(det_size, det_size))
-        _app_instance = app
+        _app_instances[det_size] = app
         _app_pid = pid
         return app
 
 
 def _close_if_owner():
-    global _app_instance, _app_pid
-    if _app_instance is None or _app_pid != os.getpid():
+    global _app_instances, _app_pid
+    if _app_pid != os.getpid():
         return
-    _app_instance = None
+    for k in list(_app_instances.keys()):
+        app = _app_instances.pop(k, None)
+        # ORT doesn't expose .close() on FaceAnalysis; del is sufficient to
+        # release the underlying ONNX runtime session on garbage collection.
+        del app
     _app_pid = None
 
 
@@ -117,11 +136,11 @@ def _detect_kps(pil_image: Image.Image) -> Optional[np.ndarray]:
     except Exception as exc:
         logger.debug("InsightFace fast pass failed: %s", exc)
 
-    # Pass 2: bigger det + CLAHE
+    # Pass 2: bigger detector input (640) + CLAHE contrast boost. This
+    # instance is cached separately from pass 1 so the prepare() call
+    # actually takes effect.
     try:
-        # We reuse the same singleton but the caller can accept the larger det;
-        # in practice 320 vs 640 detector input both run on CPU fine.
-        app = _get_face_app(det_size=320)  # keep singleton size stable
+        app = _get_face_app(det_size=640)
         faces = app.get(_apply_clahe(bgr))
         if faces and faces[0].kps is not None and len(faces[0].kps) >= 3:
             return faces[0].kps
@@ -182,12 +201,34 @@ def _pad_and_square(x1, y1, x2, y2, img_w, img_h) -> Tuple[int, int, int, int]:
     return x1, y1, x2, y2
 
 
-def _heuristic_box(w: int, h: int) -> Tuple[int, int, int, int]:
-    """Last-resort proportional box, assuming face-right-facing aligned profile."""
-    x1 = int(w * 0.40)
-    y1 = int(h * 0.28)
-    x2 = int(w * 0.88)
-    y2 = int(h * 0.72)
+def _heuristic_box(w: int, h: int, bgr: Optional[np.ndarray] = None) -> Tuple[int, int, int, int]:
+    """Last-resort proportional box.
+
+    Default assumes a right-facing aligned profile (face on the right half).
+    When ``bgr`` is supplied, compare grayscale std-dev across left/right
+    halves: the "face" side typically has more texture variation than the
+    plain background side. If the left half is meaningfully more textured,
+    mirror the box so it lands on the nose instead of the back of the head.
+    """
+    # Right-facing default.
+    x1, y1, x2, y2 = int(w * 0.40), int(h * 0.28), int(w * 0.88), int(h * 0.72)
+    if bgr is not None:
+        try:
+            gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
+            left_std = float(gray[:, : w // 2].std())
+            right_std = float(gray[:, w // 2 :].std())
+            # 1.2x margin avoids flipping on near-ties (noisy backgrounds).
+            if left_std > right_std * 1.2:
+                x1, x2 = w - int(w * 0.88), w - int(w * 0.40)
+                logger.info(
+                    "Heuristic box: detected left-facing profile "
+                    "(left_std=%.2f vs right_std=%.2f); mirrored box",
+                    left_std, right_std,
+                )
+        except Exception as exc:
+            # Don't let the heuristic orientation check break the
+            # caller - degrade to right-facing default quietly.
+            logger.debug("Heuristic orientation check failed: %s", exc)
     return x1, y1, x2, y2
 
 
@@ -198,6 +239,9 @@ def get_nose_roi_box(image: Image.Image) -> Tuple[int, int, int, int]:
     the distribution the nose-only models were trained on.
     """
     w, h = image.size
+    # Keep the BGR array around so the heuristic fallback can use it for
+    # a cheap left/right orientation check.
+    bgr = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
     kps = _detect_kps(image)
     if kps is not None:
         mask = _mask_from_kps(kps, w, h)
@@ -207,22 +251,73 @@ def get_nose_roi_box(image: Image.Image) -> Tuple[int, int, int, int]:
         logger.debug("Mask produced empty bbox; falling back to heuristic.")
     else:
         logger.debug("InsightFace detection failed on image; using heuristic box.")
-    return _heuristic_box(w, h)
+    return _heuristic_box(w, h, bgr=bgr)
 
 
-def extract_nose_roi(image: Image.Image, target_size: int = NOSE_ROI_SIZE) -> Image.Image:
-    x1, y1, x2, y2 = get_nose_roi_box(image)
+def _clip_and_warn(
+    box: Tuple[int, int, int, int], width: int, height: int, ctx: str = "crop",
+) -> Tuple[int, int, int, int]:
+    """Clip a box to image bounds, warn when clipping actually happens,
+    and raise when the remaining box is empty.
+
+    PIL's ``Image.crop`` silently pads with black on out-of-bounds coordinates
+    instead of raising - that masks bugs where a box detected on one image
+    size is applied to another. Explicit clipping surfaces the mismatch in
+    logs and prevents silently returning a half-black crop.
+    """
+    x1, y1, x2, y2 = box
+    cx1, cy1 = max(0, x1), max(0, y1)
+    cx2, cy2 = min(width, x2), min(height, y2)
+    if (cx1, cy1, cx2, cy2) != (x1, y1, x2, y2):
+        logger.warning(
+            "Nose box %s out of bounds for %dx%d image (%s); clipped to %s",
+            box, width, height, ctx, (cx1, cy1, cx2, cy2),
+        )
+    if cx2 <= cx1 or cy2 <= cy1:
+        raise ValueError(
+            f"Box is empty after clipping to {width}x{height}: {(cx1, cy1, cx2, cy2)}"
+        )
+    return cx1, cy1, cx2, cy2
+
+
+def extract_nose_roi_with_box(
+    image: Image.Image,
+    box: Tuple[int, int, int, int],
+    target_size: int = NOSE_ROI_SIZE,
+) -> Image.Image:
+    """Crop+resize a nose ROI given a pre-computed box.
+
+    Use this when the same box must be shared across multiple operations
+    (e.g. extract-generate-paste pipelines). Detecting the box independently
+    at each call can pick up a different InsightFace pass outcome and cause
+    silent mispasting.
+    """
+    w, h = image.size
+    x1, y1, x2, y2 = _clip_and_warn(box, w, h, ctx="extract_nose_roi_with_box")
     cropped = image.crop((x1, y1, x2, y2))
     return cropped.resize((target_size, target_size), Image.Resampling.LANCZOS)
 
 
-def paste_nose_back(
+def extract_nose_roi(image: Image.Image, target_size: int = NOSE_ROI_SIZE) -> Image.Image:
+    """Convenience wrapper: detect box and crop in one call."""
+    box = get_nose_roi_box(image)
+    return extract_nose_roi_with_box(image, box, target_size=target_size)
+
+
+def paste_nose_back_with_box(
     original: Image.Image,
     generated_roi: Image.Image,
+    box: Tuple[int, int, int, int],
     blend_margin: int = 8,
 ) -> Image.Image:
-    """Paste a generated nose ROI back onto the original face with feathered edges."""
-    x1, y1, x2, y2 = get_nose_roi_box(original)
+    """Paste a generated nose ROI back using a pre-computed box.
+
+    Use this when the box used to extract the pre-op ROI should be reused
+    verbatim for paste-back, so there's no detector drift between the
+    extract and paste steps.
+    """
+    w, h = original.size
+    x1, y1, x2, y2 = _clip_and_warn(box, w, h, ctx="paste_nose_back_with_box")
     roi_w = x2 - x1
     roi_h = y2 - y1
     resized_roi = generated_roi.resize((roi_w, roi_h), Image.Resampling.LANCZOS)
@@ -243,17 +338,30 @@ def paste_nose_back(
     return result
 
 
-def prepare_nose_rois() -> None:
+def paste_nose_back(
+    original: Image.Image,
+    generated_roi: Image.Image,
+    blend_margin: int = 8,
+) -> Image.Image:
+    """Convenience wrapper: detect box on ``original`` and paste in one call."""
+    box = get_nose_roi_box(original)
+    return paste_nose_back_with_box(original, generated_roi, box, blend_margin=blend_margin)
+
+
+def prepare_nose_rois(size: int = NOSE_ROI_SIZE) -> None:
     """Extract nose ROI crops for all prepared pairs and save to disk.
 
     Uses the InsightFace + tilted-ellipse mask bbox to keep the disk layout
-    consistent with what nose-only models saw during training.
+    consistent with what nose-only models saw during training. The output
+    directory is named after the crop size so multiple resolutions can
+    coexist (nose_roi_128, nose_roi_256, nose_roi_512, ...).
     """
     import pandas as pd
     from tqdm import tqdm
 
     ensure_directories()
-    NOSE_ROI_DIR.mkdir(parents=True, exist_ok=True)
+    out_dir = ARTIFACTS_DIR / "dataset" / f"nose_roi_{size}"
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = pd.read_csv(MANIFEST_PATH)
     splits = pd.read_csv(SPLITS_PATH)
@@ -268,7 +376,7 @@ def prepare_nose_rois() -> None:
 
     count = 0
     skipped = 0
-    for _, row in tqdm(merged.iterrows(), total=len(merged), desc="Extracting nose ROIs"):
+    for _, row in tqdm(merged.iterrows(), total=len(merged), desc=f"Extracting nose ROIs ({size}x{size})"):
         pre_path = Path(row["pre_path"])
         post_path = Path(row["post_path"])
         if not pre_path.exists() or not post_path.exists():
@@ -276,15 +384,44 @@ def prepare_nose_rois() -> None:
             continue
         pre_img = Image.open(pre_path).convert("RGB")
         post_img = Image.open(post_path).convert("RGB")
-        # Detect box on post, apply to both, so the pair shares the same ROI.
-        box = get_nose_roi_box(post_img)
-        for img, tag in ((pre_img, "pre"), (post_img, "post")):
-            crop = img.crop(box).resize((NOSE_ROI_SIZE, NOSE_ROI_SIZE), Image.Resampling.LANCZOS)
-            crop.save(NOSE_ROI_DIR / f"{row['sample_id']}_{tag}.jpg", quality=95)
+        # Train/infer symmetry: inference in backend/inference.py detects the
+        # box on the PRE image (the only image available at inference time) and
+        # reuses it for the paste-back. Keep training consistent with that so
+        # the nose-only models see the same distribution in both phases.
+        box = get_nose_roi_box(pre_img)
+        # Paired pre/post images can differ by a pixel or two after upstream
+        # alignment. PIL's Image.crop silently pads out-of-bounds regions with
+        # black, which would corrupt the training set without any warning.
+        # Run the box through _clip_and_warn so each image clips independently
+        # (and we skip the sample entirely when the clipped box is empty).
+        try:
+            pre_clip = _clip_and_warn(box, *pre_img.size, ctx="prepare_nose_rois(pre)")
+            post_clip = _clip_and_warn(box, *post_img.size, ctx="prepare_nose_rois(post)")
+        except ValueError as exc:
+            logger.warning("Skipping sample %s: %s", row["sample_id"], exc)
+            skipped += 1
+            continue
+        for img, clip_box, tag in (
+            (pre_img, pre_clip, "pre"),
+            (post_img, post_clip, "post"),
+        ):
+            crop = img.crop(clip_box).resize((size, size), Image.Resampling.LANCZOS)
+            crop.save(out_dir / f"{row['sample_id']}_{tag}.jpg", quality=95)
         count += 1
 
-    print(f"Extracted {count} nose ROI pairs, skipped {skipped}")
+    print(f"Extracted {count} nose ROI pairs, skipped {skipped} (output: {out_dir})")
+
+
+def _cli() -> None:
+    import argparse
+    parser = argparse.ArgumentParser(description="Extract nose ROI crops from prepared pairs.")
+    parser.add_argument(
+        "--size", type=int, default=128,
+        help="Output crop size in pixels. Common values: 128 (default), 256, 512.",
+    )
+    args = parser.parse_args()
+    prepare_nose_rois(size=args.size)
 
 
 if __name__ == "__main__":
-    prepare_nose_rois()
+    _cli()

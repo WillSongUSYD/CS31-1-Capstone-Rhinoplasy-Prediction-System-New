@@ -23,7 +23,7 @@ from .config import (
     ensure_directories,
 )
 from .dataset_tools import load_image, split_paired_image, stable_split, validate_split_halves
-from .landmarks import batch_detect_view_types
+from .landmarks import detect_view_type
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +56,9 @@ def prepare_pairs(image_size: int = DEFAULT_IMAGE_SIZE) -> None:
     canonical = manifest[manifest["is_duplicate"] == False].copy()  # noqa: E712
 
     valid_sample_ids = []
-    pre_images_for_view = []
     pre_sample_ids = []
+    view_types = []
+    view_counts = {"profile": 0, "frontal": 0, "unknown": 0}
 
     for row in tqdm(canonical.to_dict("records"), desc="Preparing pairs"):
         image = load_image(row["source_kind"], Path(row["source_container"]), row.get("source_member", "") or "")
@@ -93,16 +94,17 @@ def prepare_pairs(image_size: int = DEFAULT_IMAGE_SIZE) -> None:
         manifest.loc[manifest["sample_id"] == sid, "pre_path"] = str(PAIR_ALIGNED_DIR / f"{sid}_pre.jpg")
         manifest.loc[manifest["sample_id"] == sid, "post_path"] = str(PAIR_ALIGNED_DIR / f"{sid}_post.jpg")
 
-        pre_images_for_view.append(pre_aligned)
-        pre_sample_ids.append(sid)
-
-    # Batch detect view types
-    print("Detecting face orientations...")
-    view_types = batch_detect_view_types(pre_images_for_view)
-    view_counts = {"profile": 0, "frontal": 0, "unknown": 0}
-    for sid, vt in zip(pre_sample_ids, view_types):
+        # Detect view type inline on the aligned image instead of accumulating
+        # every PIL image in a list until the end of the loop - the old
+        # approach held ~N * (image_size^2 * 3) bytes in RAM and would OOM
+        # on >1k sample datasets at 512x512.
+        vt = detect_view_type(pre_aligned)
         manifest.loc[manifest["sample_id"] == sid, "view_type"] = vt
+        if vt not in view_counts:
+            view_counts[vt] = 0
         view_counts[vt] += 1
+        view_types.append(vt)
+        pre_sample_ids.append(sid)
 
     print(f"View types: profile={view_counts['profile']}, frontal={view_counts['frontal']}, unknown={view_counts['unknown']}")
 

@@ -34,8 +34,22 @@ def _reset_after_fork():
     Invoked automatically in the child after fork() via os.register_at_fork().
     Called *before* the child acquires any shared state, so locks held by the
     parent cannot deadlock the child.
+
+    The inherited FaceLandmarker instance belongs to the parent; closing it
+    would double-free the native handle. Setting the module-level reference
+    to None is correct but Python may still hold the inherited instance via
+    GC and eventually call its ``__del__``, which internally calls native
+    teardown on the parent's handle. To reduce that hazard we blank the
+    inherited instance's __dict__ so the native handle reference is dropped
+    before the Python wrapper's finalizer runs - worst case ``__del__`` then
+    no-ops on a stripped instance instead of crashing.
     """
     global _landmarker_instance, _landmarker_pid, _landmarker_lock, _atexit_registered
+    if _landmarker_instance is not None:
+        try:
+            _landmarker_instance.__dict__.clear()
+        except Exception:
+            pass
     _landmarker_instance = None  # inherited handle is unusable in child
     _landmarker_pid = None
     _landmarker_lock = threading.Lock()  # fresh lock (parent's may be held)
@@ -154,16 +168,40 @@ def _close_landmarker_if_owner():
 
 
 def classify_view(landmarks: list) -> str:
-    """Classify face orientation as profile, frontal, or unknown."""
+    """Classify face orientation as profile, frontal, or unknown.
+
+    Returns "unknown" when the detected landmarks look degenerate (outside
+    the normalized [0, 1] image range). MediaPipe occasionally emits wildly
+    negative coordinates on broken/black crops - treating those as "profile"
+    would poison downstream view-based dataset filtering.
+    """
     nose_tip = landmarks[NOSE_TIP]
     right_eye = landmarks[RIGHT_EYE_OUTER]
     left_eye = landmarks[LEFT_EYE_OUTER]
+
+    # Sanity guard: landmarks are nominally in [0, 1] normalized image coords.
+    # Anything outside that range usually means the detector mis-fired on a
+    # degenerate crop; bail out rather than produce a confident wrong label.
+    for lm in (nose_tip, right_eye, left_eye):
+        if not (0.0 <= lm.x <= 1.0 and 0.0 <= lm.y <= 1.0):
+            return "unknown"
 
     eye_distance = abs(right_eye.x - left_eye.x)
     eye_center_x = (right_eye.x + left_eye.x) / 2
     nose_offset = abs(nose_tip.x - eye_center_x)
 
-    if eye_distance < 0.08 or (eye_distance > 0 and nose_offset / eye_distance > 0.5):
+    # Collapsed-landmark guard: if the detector returned essentially the
+    # same point for both eyes the result is detector junk, not a real
+    # profile shot. Distinguishing it from a true profile prevents us from
+    # shipping garbage through view-based filtering.
+    if eye_distance < 0.005:
+        return "unknown"
+
+    # Tightened threshold from 0.08 to 0.03: 0.08 was so loose that many
+    # three-quarter views were flagged profile. 0.03 corresponds to ~3% of
+    # image width of inter-eye separation, which is a better proxy for a
+    # true profile where one eye is nearly fully occluded.
+    if eye_distance < 0.03 or (eye_distance > 0 and nose_offset / eye_distance > 0.5):
         return "profile"
     return "frontal"
 
@@ -268,7 +306,12 @@ def detect_landmarks(image: Image.Image) -> LandmarkResult:
     landmarker = get_landmarker()
     img_arr = np.array(image.convert("RGB"))
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_arr)
-    result = landmarker.detect(mp_image)
+    # MediaPipe FaceLandmarker is not documented as thread-safe; the singleton
+    # pattern above means concurrent FastAPI requests would otherwise issue
+    # overlapping detect() calls into one native instance. Serialize the call
+    # under the same lock used for lazy-init.
+    with _landmarker_lock:
+        result = landmarker.detect(mp_image)
 
     if not result.face_landmarks:
         return LandmarkResult(
@@ -295,7 +338,9 @@ def detect_view_type(image: Image.Image) -> str:
     landmarker = get_landmarker()
     img_arr = np.array(image.convert("RGB"))
     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_arr)
-    result = landmarker.detect(mp_image)
+    # See detect_landmarks() for the thread-safety rationale.
+    with _landmarker_lock:
+        result = landmarker.detect(mp_image)
     if not result.face_landmarks:
         return "unknown"
     return classify_view(result.face_landmarks[0])
@@ -310,7 +355,11 @@ def batch_detect_view_types(images: List[Image.Image]) -> List[str]:
     for image in images:
         img_arr = np.array(image.convert("RGB"))
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=img_arr)
-        result = landmarker.detect(mp_image)
+        # Serialize each detect() call (see detect_landmarks). Holding the
+        # lock per-image rather than for the whole loop keeps other callers
+        # interleavable - a long batch otherwise starves concurrent requests.
+        with _landmarker_lock:
+            result = landmarker.detect(mp_image)
         if not result.face_landmarks:
             results.append("unknown")
         else:
