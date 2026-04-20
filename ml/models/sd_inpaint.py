@@ -51,6 +51,47 @@ DEFAULT_PROMPT = (
 # task needs to re-wire.
 LORA_TARGET_MODULES = ["to_q", "to_k", "to_v", "to_out.0"]
 
+# Text encoder LoRA targets (CLIP's naming differs from UNet's).
+# CLIP uses HuggingFace transformers naming: q/k/v/out_proj on attention.
+LORA_TEXT_ENCODER_TARGETS = ["q_proj", "k_proj", "v_proj", "out_proj"]
+
+
+def attach_lora_to_text_encoder(
+    text_encoder,
+    rank: int = 8,
+    alpha: int = 16,
+    dropout: float = 0.0,
+):
+    """Attach LoRA adapters to a CLIP text encoder for joint training.
+
+    For pure image generation fine-tuning (style LoRAs) the text encoder
+    is usually frozen. For our task - where a fixed prompt carries strong
+    semantic intent ("post-rhinoplasty face") - training a small
+    (rank=8) text encoder LoRA lets the prompt token embeddings drift
+    toward the target distribution, effectively learning a
+    prompt-specific embedding in situ.
+
+    Uses transformers' own native ``add_adapter`` path via the same
+    LoraConfig used on UNet, just with CLIP-specific target module names.
+    """
+    text_encoder.requires_grad_(False)
+    config = LoraConfig(
+        r=rank,
+        lora_alpha=alpha,
+        target_modules=LORA_TEXT_ENCODER_TARGETS,
+        lora_dropout=dropout,
+        bias="none",
+    )
+    text_encoder.add_adapter(config)
+    trainable = sum(p.numel() for p in text_encoder.parameters() if p.requires_grad)
+    if trainable == 0:
+        raise RuntimeError(
+            "Text encoder LoRA attach produced 0 trainable params. "
+            "Check transformers version and LORA_TEXT_ENCODER_TARGETS."
+        )
+    logger.info("Text encoder LoRA attached: %d trainable params", trainable)
+    return text_encoder
+
 
 def load_pipeline_components(
     base_path: str | Path,
@@ -165,12 +206,13 @@ def encode_prompt(
     prompt: str,
     batch_size: int,
     device: torch.device,
+    require_grad: bool = False,
 ) -> torch.Tensor:
     """Tokenize + encode a single prompt, broadcast to batch_size.
 
-    The prompt is identical for every training sample so we compute the
-    embedding once per batch (cheap) rather than caching per-sample
-    (would need a special collate fn).
+    ``require_grad``: when True, gradients flow through the text encoder
+    (needed when text encoder LoRA is trainable). When False, we wrap in
+    ``no_grad`` to save activation memory (text encoder frozen).
     """
     tokens = tokenizer(
         [prompt] * batch_size,
@@ -180,12 +222,16 @@ def encode_prompt(
         return_tensors="pt",
     )
     input_ids = tokens.input_ids.to(device)
-    with torch.no_grad():
-        # text_encoder is frozen + eval; no_grad saves activation memory.
-        # Use named attribute rather than `[0]` - transformers 5.x changed the
-        # ModelOutput type; indexing isn't guaranteed to give last_hidden_state.
+    if require_grad:
         out = text_encoder(input_ids)
         embeddings = out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]
+    else:
+        with torch.no_grad():
+            # Use named attribute rather than `[0]` - transformers 5.x changed
+            # the ModelOutput type; indexing isn't guaranteed to give
+            # last_hidden_state.
+            out = text_encoder(input_ids)
+            embeddings = out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]
     return embeddings
 
 
@@ -257,8 +303,18 @@ def build_inference_pipeline(
         requires_safety_checker=False,
     ).to(device)
 
-    # Load LoRA weights onto UNet. diffusers >= 0.21 supports loading PEFT
-    # adapter weights directly via load_lora_weights.
+    # Swap default DDPM/PNDM to DPMSolver++ for inference. Same prediction
+    # target (epsilon), but the trajectory solver reaches equivalent quality
+    # in ~2x fewer sampling steps. Free quality-vs-latency win.
+    from diffusers import DPMSolverMultistepScheduler
+    pipe.scheduler = DPMSolverMultistepScheduler.from_config(
+        pipe.scheduler.config,
+        algorithm_type="dpmsolver++",
+        solver_order=2,
+    )
+
+    # Load LoRA weights. diffusers >= 0.25 supports loading BOTH UNet and
+    # text-encoder adapter keys from a single pytorch_lora_weights.safetensors.
     pipe.load_lora_weights(str(lora_dir))
 
     # Optional: fuse LoRA into base weights for ~5% inference speedup.

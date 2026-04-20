@@ -38,6 +38,7 @@ from .config import ARTIFACTS_DIR
 from .data import load_pairs
 from .models.sd_inpaint import (
     DEFAULT_PROMPT,
+    attach_lora_to_text_encoder,
     attach_lora_to_unet,
     build_masked_latents,
     encode_prompt,
@@ -192,29 +193,118 @@ def train(args: argparse.Namespace) -> Path:
 
     # ---- Load base model components ----
     logger.info("Loading SD 1.5 Inpainting components from %s", args.base)
-    # VAE and text encoder are frozen (inference-only) during training.
-    # Loading them in fp16 saves ~1.5GB VRAM with no accuracy hit since we
-    # never backprop through them. UNet stays fp32 so LoRA master weights
-    # have full precision; autocast handles the fp16 forward for speed.
+    # VAE is always frozen - load in fp16 to save VRAM (no gradient path).
+    # Text encoder dtype depends on whether we train LoRA on it: fp16 when
+    # frozen (saves VRAM), fp32 when trained (PEFT adds fp32 LoRA adapters
+    # on top - mixing fp16 base weights with fp32 LoRA adapters under
+    # bf16 autocast produces NaN within a few steps).
+    # UNet always fp32 master weights for LoRA training; autocast handles
+    # the bf16 forward.
+    te_dtype = torch.float32 if args.train_text_encoder else torch.float16
     vae, text_encoder, tokenizer, unet, scheduler = load_pipeline_components(
         args.base, device=device, dtype=torch.float16,
     )
-    # UNet needs fp32 master weights for LoRA training; load_pipeline_components
-    # loaded it in fp32 already (ignores the ``dtype`` kwarg for UNet on purpose).
+    # load_pipeline_components loads both VAE and text_encoder in fp16
+    # regardless of caller dtype for UNet. For the train-TE path we need
+    # to upcast the text encoder here.
+    if args.train_text_encoder:
+        text_encoder = text_encoder.to(dtype=torch.float32)
 
     # ---- Attach LoRA ----
     unet = attach_lora_to_unet(unet, rank=args.lora_rank, alpha=args.lora_alpha)
     unet.train()
 
+    # Optionally attach LoRA to text encoder too. For tasks with a fixed
+    # semantic prompt ("post-rhinoplasty face"), a small text encoder LoRA
+    # can shift the prompt embedding toward our dataset's latent space,
+    # improving how UNet cross-attention responds to the prompt.
+    train_text_encoder = args.train_text_encoder
+    if train_text_encoder:
+        text_encoder = attach_lora_to_text_encoder(
+            text_encoder,
+            rank=args.te_lora_rank,
+            alpha=args.te_lora_alpha,
+        )
+        text_encoder.train()
+    else:
+        # Fully frozen - keep text encoder in eval mode + no_grad during forward.
+        text_encoder.requires_grad_(False)
+        text_encoder.eval()
+
+    # ---- Resume LoRA weights from a previous run ----
+    # Used for chaining training runs past the initial --steps cap. Loads
+    # adapter weights from a previous checkpoint dir, leaving the optimizer
+    # and LR scheduler fresh (explicitly lose momentum - keeps semantics
+    # simple: each chained run is a fresh optimisation on warm-started
+    # weights, which behaves like "more epochs at a new LR").
+    if args.resume_from:
+        resume_path = Path(args.resume_from)
+        if not resume_path.exists():
+            raise FileNotFoundError(f"--resume-from dir not found: {resume_path}")
+        logger.info("Resuming LoRA weights from %s", resume_path)
+        # Use diffusers' LoRA loader utility on the UNet directly.
+        # StableDiffusionInpaintPipeline.save_lora_weights writes a
+        # pytorch_lora_weights.safetensors containing both UNet and optional
+        # text-encoder adapter weights keyed by prefix. We load the whole
+        # state dict and dispatch to each model.
+        from safetensors.torch import load_file
+        lora_file = resume_path / "pytorch_lora_weights.safetensors"
+        if not lora_file.exists():
+            raise FileNotFoundError(
+                f"pytorch_lora_weights.safetensors not found in {resume_path}")
+        full_state = load_file(str(lora_file))
+        # Keys are prefixed with "unet." or "text_encoder." by
+        # StableDiffusionInpaintPipeline.save_lora_weights.
+        unet_sd = {
+            k[len("unet."):]: v for k, v in full_state.items()
+            if k.startswith("unet.")
+        }
+        te_sd = {
+            k[len("text_encoder."):]: v for k, v in full_state.items()
+            if k.startswith("text_encoder.")
+        }
+        # Convert back from diffusers key schema to PEFT schema so
+        # load_state_dict(strict=False) finds the adapter params.
+        from diffusers.utils import convert_state_dict_to_peft
+        if unet_sd:
+            peft_unet_sd = convert_state_dict_to_peft(unet_sd)
+            missing, unexpected = unet.load_state_dict(peft_unet_sd, strict=False)
+            logger.info("Resumed UNet LoRA: %d keys loaded, %d missing, %d unexpected",
+                        len(peft_unet_sd), len(missing), len(unexpected))
+        if te_sd and train_text_encoder:
+            peft_te_sd = convert_state_dict_to_peft(te_sd)
+            missing, unexpected = text_encoder.load_state_dict(peft_te_sd, strict=False)
+            logger.info("Resumed TE LoRA: %d keys loaded, %d missing, %d unexpected",
+                        len(peft_te_sd), len(missing), len(unexpected))
+        elif te_sd and not train_text_encoder:
+            logger.warning("Checkpoint has text-encoder LoRA weights but "
+                           "--train-text-encoder is off; skipping TE weights.")
+
     # ---- Optimiser ----
-    # Only LoRA params have requires_grad=True; passing model.parameters()
-    # is fine and lets PEFT handle filtering.
+    # Gather trainable params from BOTH models (UNet LoRA always, text
+    # encoder LoRA only when enabled). PEFT handles requires_grad filtering.
     trainable_params = [p for p in unet.parameters() if p.requires_grad]
+    if train_text_encoder:
+        trainable_params += [p for p in text_encoder.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(
         trainable_params,
         lr=args.lr,
         betas=(0.9, 0.999),
         weight_decay=1e-2,
+    )
+
+    # ---- LR scheduler: linear warmup + cosine decay ----
+    # Constant LR is fine for short runs but over 20k steps we benefit from
+    # warmup (stabilises early LoRA init) and late-training lr decay
+    # (refines without oscillating around the minimum).
+    from diffusers.optimization import get_scheduler
+    lr_scheduler = get_scheduler(
+        "cosine",
+        optimizer=optimizer,
+        num_warmup_steps=args.warmup_steps,
+        # num_training_steps controls the cosine period; use total
+        # optimizer steps (= steps / grad_accum).
+        num_training_steps=args.steps // args.grad_accum,
     )
 
     # ---- Data ----
@@ -241,11 +331,19 @@ def train(args: argparse.Namespace) -> Path:
                 args.batch_size * args.grad_accum)
 
     # ---- Pre-compute prompt embeddings ----
-    # Fixed prompt → compute once and reuse every step.
-    prompt_embeds = encode_prompt(
-        tokenizer, text_encoder, args.prompt, batch_size=args.batch_size, device=device,
-    )
-    logger.info("prompt=%r embeds=%s", args.prompt, tuple(prompt_embeds.shape))
+    # When text encoder is FROZEN, the prompt embedding is fixed for the
+    # whole run - compute once, reuse every step.
+    # When text encoder is TRAINED (LoRA adapters added), the embedding
+    # changes as adapter weights update, so we must re-encode every step.
+    if not train_text_encoder:
+        prompt_embeds = encode_prompt(
+            tokenizer, text_encoder, args.prompt, batch_size=args.batch_size, device=device,
+            require_grad=False,
+        )
+        logger.info("prompt=%r embeds=%s (cached - TE frozen)", args.prompt, tuple(prompt_embeds.shape))
+    else:
+        prompt_embeds = None
+        logger.info("prompt=%r (recomputed every step - TE trainable)", args.prompt)
 
     # ---- Training loop ----
     num_train_timesteps = scheduler.config.num_train_timesteps
@@ -278,12 +376,18 @@ def train(args: argparse.Namespace) -> Path:
         mask = batch["mask"].to(device, non_blocking=True)
         bsz = pre.shape[0]
 
-        # If the last loaded batch has fewer than args.batch_size samples
-        # (shouldn't happen with drop_last=True, but be defensive),
-        # re-encode prompts for that batch size.
-        if bsz != prompt_embeds.shape[0]:
+        # If text encoder is trained, re-encode every step (gradient flow).
+        # Otherwise reuse the cached prompt embedding for identical batch
+        # sizes; fall back to re-encoding on size mismatch.
+        if train_text_encoder:
             current_prompt = encode_prompt(
                 tokenizer, text_encoder, args.prompt, batch_size=bsz, device=device,
+                require_grad=True,
+            )
+        elif bsz != prompt_embeds.shape[0]:
+            current_prompt = encode_prompt(
+                tokenizer, text_encoder, args.prompt, batch_size=bsz, device=device,
+                require_grad=False,
             )
         else:
             current_prompt = prompt_embeds
@@ -333,6 +437,7 @@ def train(args: argparse.Namespace) -> Path:
             # diffusion fine-tune).
             torch.nn.utils.clip_grad_norm_(trainable_params, max_norm=1.0)
             optimizer.step()
+            lr_scheduler.step()  # advance cosine schedule after each optim step
             optimizer.zero_grad()
 
         loss_val = float(loss.detach().item()) * args.grad_accum
@@ -347,6 +452,7 @@ def train(args: argparse.Namespace) -> Path:
             val_loss = _validate(
                 unet, vae, val_loader, scheduler, device, prompt_embeds,
                 num_train_timesteps, vae_scale, args.prompt, tokenizer, text_encoder,
+                train_text_encoder=train_text_encoder,
             )
             elapsed = time.time() - start_time
             history.append({
@@ -360,12 +466,27 @@ def train(args: argparse.Namespace) -> Path:
 
             # Save "latest" every val cycle. Saves only LoRA adapter
             # weights (few MB).
-            _save_lora(unet, out_dir / "latest", step=step + 1, val_loss=val_loss)
+            _save_lora(unet, text_encoder, out_dir / "latest",
+                       step=step + 1, val_loss=val_loss,
+                       train_text_encoder=train_text_encoder)
 
             if math.isfinite(val_loss) and val_loss < best_val:
                 best_val = val_loss
-                _save_lora(unet, out_dir / "best", step=step + 1, val_loss=val_loss)
+                _save_lora(unet, text_encoder, out_dir / "best",
+                           step=step + 1, val_loss=val_loss,
+                           train_text_encoder=train_text_encoder)
                 logger.info("  ✓ new best val_loss=%.4f saved to best/", val_loss)
+
+            # Milestone checkpoint: save an immutable copy every
+            # `milestone_every` steps so we can eval multiple points post-hoc
+            # and pick the one with best FID (which may not be the lowest
+            # val_loss due to overfit/LoRA-capacity interactions).
+            if args.milestone_every > 0 and (step + 1) % args.milestone_every == 0:
+                milestone_dir = out_dir / f"step_{step + 1}"
+                _save_lora(unet, text_encoder, milestone_dir,
+                           step=step + 1, val_loss=val_loss,
+                           train_text_encoder=train_text_encoder)
+                logger.info("  ✓ milestone checkpoint saved at step %d", step + 1)
 
             (out_dir / "history.json").write_text(
                 json.dumps(history, indent=2), encoding="utf-8",
@@ -379,11 +500,16 @@ def train(args: argparse.Namespace) -> Path:
         "base_model": str(args.base),
         "lora_rank": args.lora_rank,
         "lora_alpha": args.lora_alpha,
+        "train_text_encoder": train_text_encoder,
+        "te_lora_rank": args.te_lora_rank if train_text_encoder else None,
+        "te_lora_alpha": args.te_lora_alpha if train_text_encoder else None,
         "steps": args.steps,
         "batch_size": args.batch_size,
         "grad_accum": args.grad_accum,
         "effective_batch": args.batch_size * args.grad_accum,
         "lr": args.lr,
+        "warmup_steps": args.warmup_steps,
+        "milestone_every": args.milestone_every,
         "prompt": args.prompt,
         "best_val_loss": best_val,
         "total_time_sec": round(time.time() - start_time, 1),
@@ -398,6 +524,7 @@ def train(args: argparse.Namespace) -> Path:
 def _validate(
     unet, vae, loader, scheduler, device, prompt_embeds,
     num_train_timesteps, vae_scale, prompt_text, tokenizer, text_encoder,
+    train_text_encoder: bool = False,
 ) -> float:
     """Mean noise-prediction MSE on the val split.
 
@@ -407,6 +534,9 @@ def _validate(
     """
     was_training = unet.training
     unet.eval()
+    te_was_training = text_encoder.training if train_text_encoder else False
+    if train_text_encoder:
+        text_encoder.eval()
     total = 0.0
     n = 0
     for batch in loader:
@@ -415,7 +545,12 @@ def _validate(
         mask = batch["mask"].to(device)
         bsz = pre.shape[0]
 
-        if bsz != prompt_embeds.shape[0]:
+        # When text encoder is trained, always re-encode (its weights shift
+        # each val cycle). When frozen, reuse cached prompt_embeds unless
+        # batch size differs.
+        if train_text_encoder or prompt_embeds is None:
+            pe = encode_prompt(tokenizer, text_encoder, prompt_text, batch_size=bsz, device=device)
+        elif bsz != prompt_embeds.shape[0]:
             pe = encode_prompt(tokenizer, text_encoder, prompt_text, batch_size=bsz, device=device)
         else:
             pe = prompt_embeds
@@ -445,20 +580,23 @@ def _validate(
 
     if was_training:
         unet.train()
+    if te_was_training:
+        text_encoder.train()
     return total / max(1, n)
 
 
-def _save_lora(unet, target: Path, step: int, val_loss: float) -> None:
+def _save_lora(unet, text_encoder, target: Path, step: int, val_loss: float,
+               train_text_encoder: bool = False) -> None:
     """Save LoRA adapter weights in diffusers-native format.
 
-    We use ``StableDiffusionInpaintPipeline.save_lora_weights`` with just the
-    UNet's LoRA layers, which writes ``pytorch_lora_weights.safetensors``
-    using the key schema that ``pipeline.load_lora_weights`` can read back
-    without the PEFT compat shim. This keeps the train → inference round
-    trip stable across diffusers versions.
+    Uses ``StableDiffusionInpaintPipeline.save_lora_weights`` which writes
+    ``pytorch_lora_weights.safetensors`` with the key schema that
+    ``pipeline.load_lora_weights`` can read back without the PEFT compat
+    shim. When ``train_text_encoder`` is True the text encoder adapters
+    are saved alongside UNet adapters in the same file, and diffusers'
+    pipeline loader will attach both when reloading.
 
-    Adapter file is a few MB (rank 16 on ~100 attention projections), so
-    keeping both ``latest`` and ``best`` on disk costs basically nothing.
+    Adapter file is ~12-25MB depending on rank; cheap to keep many.
     """
     from diffusers import StableDiffusionInpaintPipeline
     from diffusers.utils import convert_state_dict_to_diffusers
@@ -466,19 +604,25 @@ def _save_lora(unet, target: Path, step: int, val_loss: float) -> None:
 
     target.mkdir(parents=True, exist_ok=True)
 
-    # Extract adapter-only state dict. get_peft_model_state_dict filters to
-    # just the LoRA A/B matrices (ignoring the base UNet weights).
     unet_lora_state_dict = convert_state_dict_to_diffusers(
         get_peft_model_state_dict(unet)
     )
+    text_encoder_lora_state_dict = None
+    if train_text_encoder:
+        text_encoder_lora_state_dict = convert_state_dict_to_diffusers(
+            get_peft_model_state_dict(text_encoder)
+        )
+
     StableDiffusionInpaintPipeline.save_lora_weights(
         save_directory=str(target),
         unet_lora_layers=unet_lora_state_dict,
+        text_encoder_lora_layers=text_encoder_lora_state_dict,
         safe_serialization=True,
     )
     (target / "checkpoint_meta.json").write_text(json.dumps({
         "step": step,
         "val_loss": val_loss,
+        "train_text_encoder": train_text_encoder,
     }, indent=2), encoding="utf-8")
 
 
@@ -493,13 +637,30 @@ def main() -> None:
     parser.add_argument("--grad-accum", type=int, default=2,
                         help="Gradient accumulation steps. effective_batch = batch-size * grad-accum")
     parser.add_argument("--lr", type=float, default=1e-4)
-    parser.add_argument("--lora-rank", type=int, default=16)
-    parser.add_argument("--lora-alpha", type=int, default=32)
+    parser.add_argument("--lora-rank", type=int, default=16, help="UNet LoRA rank")
+    parser.add_argument("--lora-alpha", type=int, default=32, help="UNet LoRA alpha")
+    parser.add_argument("--train-text-encoder", action="store_true",
+                        help="Also attach LoRA to text encoder and train it")
+    parser.add_argument("--te-lora-rank", type=int, default=8, help="Text encoder LoRA rank")
+    parser.add_argument("--te-lora-alpha", type=int, default=16, help="Text encoder LoRA alpha")
+    parser.add_argument("--warmup-steps", type=int, default=500,
+                        help="Linear LR warmup steps before cosine decay")
+    parser.add_argument("--milestone-every", type=int, default=0,
+                        help="Save a step_N/ checkpoint every this many steps "
+                             "(in addition to latest/ and best/). 0 = disabled.")
     parser.add_argument("--val-every", type=int, default=250)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--seed", type=int, default=31,
                         help="Seeds Python/Numpy/Torch RNG for reproducibility. "
                              "Noise sampling inside val loop has its own seeded generator.")
+    parser.add_argument("--resume-from", type=str, default=None,
+                        help="Path to a LoRA checkpoint directory (e.g. ./latest/) "
+                             "to load adapter weights from. Use to chain multiple "
+                             "training runs past the initial --steps ceiling once "
+                             "milestone FID eval shows the model is still improving. "
+                             "Note: only LoRA weights are restored, not optimizer "
+                             "state - LR schedule starts fresh. Pair with a lower "
+                             "--lr (e.g. 5e-5) to avoid undoing progress.")
     parser.add_argument("--limit", type=int, default=None,
                         help="Debug: train on only first N samples")
     args = parser.parse_args()

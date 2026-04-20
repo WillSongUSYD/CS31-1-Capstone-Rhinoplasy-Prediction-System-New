@@ -1,0 +1,110 @@
+[
+  {
+    "split": "test",
+    "n_samples": 57,
+    "ssim_full_mean": 0.6455304622650146,
+    "ssim_nose_mean": 0.5537617364109376,
+    "lpips_full_mean": 0.1039841846611939,
+    "lpips_nose_mean": 0.016503934920030206,
+    "fid": 43.21550305595778,
+    "config": {
+      "base": "/root/CS31/models/sd_base/inpaint",
+      "lora": "/root/CS31/models/outcome/sd_inpaint_nose_v5/step_10000",
+      "steps": 25,
+      "guidance": 7.5,
+      "strength": 1.0,
+      "image_size": 512
+    },
+    "checkpoint": "step_10000"
+  },
+  {
+    "split": "test",
+    "n_samples": 57,
+    "ssim_full_mean": 0.652168994932844,
+    "ssim_nose_mean": 0.5579062456361413,
+    "lpips_full_mean": 0.10377361367276886,
+    "lpips_nose_mean": 0.016223703078075982,
+    "fid": 43.860181258058915,
+    "config": {
+      "base": "/root/CS31/models/sd_base/inpaint",
+      "lora": "/root/CS31/models/outcome/sd_inpaint_nose_v5/step_15000",
+      "steps": 25,
+      "guidance": 7.5,
+      "strength": 1.0,
+      "image_size": 512
+    },
+    "checkpoint": "step_15000"
+  },
+  {
+    "split": "test",
+    "n_samples": 57,
+    "ssim_full_mean": 0.6532333357292309,
+    "ssim_nose_mean": 0.5563884882184297,
+    "lpips_full_mean": 0.10380385646171737,
+    "lpips_nose_mean": 0.016279875713384205,
+    "fid": 43.80382184282915,
+    "config": {
+      "base": "/root/CS31/models/sd_base/inpaint",
+      "lora": "/root/CS31/models/outcome/sd_inpaint_nose_v5/step_20000",
+      "steps": 25,
+      "guidance": 7.5,
+      "strength": 1.0,
+      "image_size": 512
+    },
+    "checkpoint": "step_20000"
+  },
+  {
+    "split": "test",
+    "n_samples": 57,
+    "ssim_full_mean": 0.6426573772179452,
+    "ssim_nose_mean": 0.5520127694936895,
+    "lpips_full_mean": 0.10482778462270896,
+    "lpips_nose_mean": 0.016602694065097654,
+    "fid": 43.658129830651575,
+    "config": {
+      "base": "/root/CS31/models/sd_base/inpaint",
+      "lora": "/root/CS31/models/outcome/sd_inpaint_nose_v5/step_5000",
+      "steps": 25,
+      "guidance": 7.5,
+      "strength": 1.0,
+      "image_size": 512
+    },
+    "checkpoint": "step_5000"
+  },
+  {
+    "split": "test",
+    "n_samples": 57,
+    "ssim_full_mean": 0.6528742386583697,
+    "ssim_nose_mean": 0.5563929364869987,
+    "lpips_full_mean": 0.10381582608087021,
+    "lpips_nose_mean": 0.016234736758888813,
+    "fid": 43.64807569206292,
+    "config": {
+      "base": "/root/CS31/models/sd_base/inpaint",
+      "lora": "/root/CS31/models/outcome/sd_inpaint_nose_v5/best",
+      "steps": 25,
+      "guidance": 7.5,
+      "strength": 1.0,
+      "image_size": 512
+    },
+    "checkpoint": "best"
+  },
+  {
+    "split": "test",
+    "n_samples": 57,
+    "ssim_full_mean": 0.6532333357292309,
+    "ssim_nose_mean": 0.5563884882184297,
+    "lpips_full_mean": 0.10380385646171737,
+    "lpips_nose_mean": 0.016279875713384205,
+    "fid": 43.80382184282915,
+    "config": {
+      "base": "/root/CS31/models/sd_base/inpaint",
+      "lora": "/root/CS31/models/outcome/sd_inpaint_nose_v5/latest",
+      "steps": 25,
+      "guidance": 7.5,
+      "strength": 1.0,
+      "image_size": 512
+    },
+    "checkpoint": "latest"
+  }
+]

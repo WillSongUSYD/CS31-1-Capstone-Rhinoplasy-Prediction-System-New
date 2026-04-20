@@ -1,0 +1,17 @@
+{
+  "split": "test",
+  "n_samples": 57,
+  "ssim_full_mean": 0.6528742386583697,
+  "ssim_nose_mean": 0.5563929364869987,
+  "lpips_full_mean": 0.10381582608087021,
+  "lpips_nose_mean": 0.016234736758888813,
+  "fid": 43.64807569206292,
+  "config": {
+    "base": "/root/CS31/models/sd_base/inpaint",
+    "lora": "/root/CS31/models/outcome/sd_inpaint_nose_v5/best",
+    "steps": 25,
+    "guidance": 7.5,
+    "strength": 1.0,
+    "image_size": 512
+  }
+}

@@ -55,6 +55,12 @@ artifacts/eval_sd_inpaint/generated/
 artifacts/eval_sd_inpaint/*.png
 artifacts/eval_sd_inpaint/*.jpg
 
+# V5 eval outputs - same rule (patient faces in generated/ and qualitative_grid.png).
+# Keep milestone summaries + loss/FID plots tracked.
+artifacts/eval_sd_inpaint_v5/*/generated/
+artifacts/eval_sd_inpaint_v5/*/qualitative_grid.png
+artifacts/eval_sd_inpaint_v5/*/*.jpg
+
 # V3 eval grids - contain patient faces. Keep benchmark.csv tracked.
 artifacts/eval_v3_512/*/qualitative_grid.png
 artifacts/eval_v3_512/*/*.jpg

@@ -210,15 +210,74 @@ def _save_grid(samples, path: Path) -> None:
     save_image(grid, path)
 
 
+def evaluate_milestones(args: argparse.Namespace) -> dict:
+    """Evaluate every ``step_N/`` subdirectory of ``args.lora_dir`` and a
+    ``best/`` sibling, writing a summary CSV.
+
+    Useful for post-hoc selection of the optimal training step when FID
+    doesn't monotonically track val_loss (common in LoRA fine-tunes where
+    over-training degrades visual quality even as noise MSE keeps dropping).
+    """
+    from pathlib import Path
+    lora_root = Path(args.lora_dir)
+    candidates = sorted(
+        [p for p in lora_root.iterdir() if p.is_dir() and (p.name.startswith("step_") or p.name in {"best", "latest"})],
+        key=lambda p: (0 if p.name.startswith("step_") else 1, p.name),
+    )
+    logger.info("Found %d milestone dirs: %s", len(candidates), [p.name for p in candidates])
+    results = []
+    for ckpt in candidates:
+        sub_args = argparse.Namespace(**vars(args))
+        sub_args.lora = str(ckpt)
+        sub_args.out = str(Path(args.out) / ckpt.name)
+        logger.info("=== evaluating %s ===", ckpt.name)
+        try:
+            metrics = evaluate(sub_args)
+            metrics["checkpoint"] = ckpt.name
+            results.append(metrics)
+        except Exception as exc:
+            logger.exception("eval failed for %s: %s", ckpt.name, exc)
+            results.append({"checkpoint": ckpt.name, "error": str(exc)})
+
+    summary_path = Path(args.out) / "milestone_summary.json"
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    # Also emit a quick CSV for easy inspection.
+    csv_path = Path(args.out) / "milestone_summary.csv"
+    with csv_path.open("w", encoding="utf-8") as f:
+        f.write("checkpoint,ssim_full,ssim_nose,lpips_full,lpips_nose,fid\n")
+        for r in results:
+            if "error" in r:
+                f.write(f"{r['checkpoint']},ERROR,,,,\n")
+            else:
+                f.write(
+                    f"{r['checkpoint']},"
+                    f"{r.get('ssim_full_mean',''):.4f},"
+                    f"{r.get('ssim_nose_mean',''):.4f},"
+                    f"{r.get('lpips_full_mean',''):.4f},"
+                    f"{r.get('lpips_nose_mean',''):.4f},"
+                    f"{r.get('fid',0):.2f}\n"
+                )
+    logger.info("Milestone summary written to %s", summary_path)
+    return {"milestones": results, "summary_path": str(summary_path)}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate SD Inpaint LoRA on test split")
     parser.add_argument("--base", required=True)
-    parser.add_argument("--lora", required=True)
+    # EITHER --lora <single-checkpoint-dir> OR --lora-dir <parent-with-step_N/>
+    lora_group = parser.add_mutually_exclusive_group(required=True)
+    lora_group.add_argument("--lora", help="Single LoRA checkpoint directory")
+    lora_group.add_argument("--lora-dir",
+                            help="Parent directory containing step_N/, best/, latest/ "
+                                 "to evaluate each in sequence")
     parser.add_argument("--out", required=True)
     parser.add_argument("--split", default="test", choices=["train", "val", "test"])
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--image-size", type=int, default=512)
-    parser.add_argument("--steps", type=int, default=30)
+    parser.add_argument("--steps", type=int, default=25,
+                        help="Inference steps. With DPMSolver++ (set in build_inference_pipeline), "
+                             "25 matches or beats 50 DDPM steps.")
     parser.add_argument("--guidance", type=float, default=7.5)
     parser.add_argument("--strength", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=42)
@@ -227,7 +286,10 @@ def main() -> None:
     parser.add_argument("--no-fid", dest="compute_fid", action="store_false")
     parser.set_defaults(compute_fid=True)
     args = parser.parse_args()
-    evaluate(args)
+    if args.lora_dir:
+        evaluate_milestones(args)
+    else:
+        evaluate(args)
 
 
 if __name__ == "__main__":
