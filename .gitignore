@@ -70,6 +70,11 @@ artifacts/eval_sd_inpaint_v5/*/generated/
 artifacts/eval_sd_inpaint_v5/*/qualitative_grid.png
 artifacts/eval_sd_inpaint_v5/*/*.jpg
 
+# V6 eval outputs - same rule as V5.
+artifacts/eval_sd_inpaint_v6/*/generated/
+artifacts/eval_sd_inpaint_v6/*/qualitative_grid.png
+artifacts/eval_sd_inpaint_v6/*/*.jpg
+
 # V3 eval grids - contain patient faces. Keep benchmark.csv tracked.
 artifacts/eval_v3_512/*/qualitative_grid.png
 artifacts/eval_v3_512/*/*.jpg
