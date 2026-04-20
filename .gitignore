@@ -49,11 +49,24 @@ artifacts/predictions/
 artifacts/eval/
 out/
 
+# Path C / SD inpaint eval outputs - patient faces in generated/ and grid.
+# Keep metrics.json (small, PII-free) tracked explicitly via exclusion.
+artifacts/eval_sd_inpaint/generated/
+artifacts/eval_sd_inpaint/*.png
+artifacts/eval_sd_inpaint/*.jpg
+
+# V3 eval grids - contain patient faces. Keep benchmark.csv tracked.
+artifacts/eval_v3_512/*/qualitative_grid.png
+artifacts/eval_v3_512/*/*.jpg
+artifacts/eval_v3_512/*/*.jpeg
+
 # ===== Model checkpoints (too large for git, regenerable) =====
 models/outcome/
 models/outcome_v1_backup/
 models/outcome_v2_128_backup/
 models/outcome_v2_512_bad/
+models/outcome_v3_512/
+models/sd_base/
 models/face_landmarker.task
 
 # ===== Transient / experimental =====
