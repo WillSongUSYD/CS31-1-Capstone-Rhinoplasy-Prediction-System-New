@@ -32,9 +32,25 @@ NOSE_ROI_DIR = ARTIFACTS_DIR / "dataset" / "nose_roi_128"
 NOSE_ROI_SIZE = 128
 
 # Mask algorithm constants (match ml training masks)
-_MASK_CENTER_ALONG_AXIS = 0.65
-_MASK_LONG_AXIS_FRAC = 0.75
-_MASK_SHORT_AXIS_FRAC = 0.55
+# Nose-mask ellipse geometry (tilted along eye_mid -> nose_tip axis).
+#
+# Tuning history:
+#   V3/V4/V5 (0.65/0.75/0.55) - BROKEN: ellipse extended 10% above eye_mid
+#     into the eyebrow region and 40% past the nose tip into the lips.
+#     This caused the fine-tuned LoRA to co-modify eyebrows alongside the nose.
+#   V6 pass 1 (0.72/0.55/0.42) - safe from eyebrows but some noses (esp.
+#     profile views and long noses) had nose tip/nostrils under-covered at
+#     the lower edge (1.27 × axis).
+#   V6 pass 2 (0.75/0.60/0.48) - slightly larger, still safe from brows,
+#     extends further to cover nose tip + nostrils + alar wings.
+#
+# Final range (axis units, measured from eye_mid toward nose_tip):
+#   upper edge = CENTER - LONG = 0.15 (just below eye line, safe from brows)
+#   lower edge = CENTER + LONG = 1.35 (past nose tip by 35%, covers columella +
+#                                       nostrils + upper philtrum)
+_MASK_CENTER_ALONG_AXIS = 0.75   # was 0.65
+_MASK_LONG_AXIS_FRAC = 0.60      # was 0.75
+_MASK_SHORT_AXIS_FRAC = 0.48     # was 0.55
 _MASK_BBOX_PAD_FRAC = 0.12  # same padding used when extracting training crops
 _MASK_GAUSS_KERNEL = (25, 25)
 _MASK_GAUSS_SIGMA = 9
