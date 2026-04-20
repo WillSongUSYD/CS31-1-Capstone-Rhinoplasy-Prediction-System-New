@@ -9,7 +9,7 @@ from collections import OrderedDict
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
@@ -145,6 +145,15 @@ def _is_nose_model(model_name: str) -> bool:
     return model_name.lower().endswith("_nose")
 
 
+def _is_sd_inpaint_model(model_name: str) -> bool:
+    """SD 1.5 Inpainting + LoRA models (V4 path C). Dispatched to a separate
+    code path because the serving shape (HF pipeline in/out PIL + mask) has
+    no overlap with the torch-checkpoint-based ``_get_cached_model`` flow.
+    """
+    name = model_name.lower()
+    return name.startswith("sd_inpaint") or name.startswith("sd-inpaint")
+
+
 def _sanitize_image_size(size: int, model_name: str, default: int) -> int:
     # Clamp to a reasonable range to avoid nonsensical values causing OOM
     if size < 32 or size > 1024:
@@ -258,6 +267,13 @@ def run_prediction(upload_path: Path, model_name: str, paired_input: bool) -> di
         pre_image, post_image = split_paired_image(input_image)
     else:
         pre_image, post_image = input_image, None
+
+    # SD Inpaint + LoRA has an entirely different serving pipeline (HF
+    # pipeline, PIL in/out, on-the-fly mask synthesis). Dispatch before
+    # loading a torch checkpoint to avoid load_model_from_checkpoint trying
+    # to import a non-existent `sd_inpaint_nose` architecture class.
+    if _is_sd_inpaint_model(model_name):
+        return _run_sd_prediction(pre_image, post_image, model_name, paired_input)
 
     checkpoint_name = "best.pt"
     model = _get_cached_model(model_name, checkpoint_name, device)
@@ -388,6 +404,145 @@ def run_prediction(upload_path: Path, model_name: str, paired_input: bool) -> di
                     "summary": desc.summary,
                     "metrics": desc.detail_metrics,
                 }
+    except Exception:
+        logger.warning("Description generation failed", exc_info=True)
+
+    return {
+        "input_mode": "paired" if paired_input else "pre_only",
+        "pre_path": pre_path,
+        "generated_post_path": gen_path,
+        "reference_post_path": reference_post_path,
+        "metrics": metrics,
+        "landmarks": landmark_data,
+        "description": description_data,
+    }
+
+
+# ---------------------------------------------------------------------------
+# SD 1.5 Inpainting + LoRA serving (V4 path C)
+# ---------------------------------------------------------------------------
+
+# Resolve SD artefact paths once. Override via env vars in deployment so
+# we don't hardcode ~3.5GB of weights into the repo.
+_SD_BASE_DIR_ENV = "CS31_SD_BASE_DIR"
+_SD_LORA_DIR_ENV = "CS31_SD_LORA_DIR"
+
+
+def _sd_artefact_paths(model_name: str) -> Tuple[Path, Path]:
+    """Resolve (base_dir, lora_dir). Env-overrideable so the same binary can
+    run against different base models (future SD 2.x / SDXL) without code
+    changes, and against arbitrary LoRA directories for A/B testing.
+    """
+    repo_root = Path(__file__).resolve().parents[1]
+    default_base = repo_root / "models" / "sd_base" / "inpaint"
+    default_lora = repo_root / "models" / "outcome_v3_512" / model_name / "best"
+    base = Path(os.environ.get(_SD_BASE_DIR_ENV, default_base))
+    lora = Path(os.environ.get(_SD_LORA_DIR_ENV, default_lora))
+    return base, lora
+
+
+def _run_sd_prediction(
+    pre_image: Image.Image,
+    post_image: Optional[Image.Image],
+    model_name: str,
+    paired_input: bool,
+) -> dict:
+    """Serving path for SD 1.5 Inpainting + LoRA models.
+
+    Contract mirrors ``run_prediction`` so the caller (serve.py route) sees
+    identical response shape regardless of which model dispatched.
+
+    Differences vs the torch-checkpoint path:
+      * No ``_get_cached_model`` / ``load_model_from_checkpoint`` - SD uses a
+        HF pipeline cached independently in ``backend.inference_sd``.
+      * No tensorize; the pipeline consumes/produces PIL.
+      * A nose mask is synthesized from InsightFace landmarks on the
+        pre-op image (training data had per-sample masks; inference has to
+        produce one on the fly).
+      * No raw vs pasted-back split - the pipeline already outputs a full
+        aligned face with the nose region regenerated, so the generated
+        artefact IS the final user-facing result.
+    """
+    # Defer imports of heavy SD stack so the plain-torch path doesn't pay
+    # diffusers/transformers import cost on every serve boot.
+    from backend.inference_sd import generate_sd, load_sd_pipeline
+
+    base_dir, lora_dir = _sd_artefact_paths(model_name)
+    pipeline = load_sd_pipeline(base_dir, lora_dir)
+
+    # Synthesize the nose mask from landmarks. We already run landmark
+    # detection below for the description; running it here too is
+    # acceptable (cheap vs the 30-step diffusion sample that follows).
+    mask = nose_roi_mod.get_nose_mask(pre_image)
+
+    generated = generate_sd(
+        pipeline, pre_image, mask,
+        num_inference_steps=30,
+        guidance_scale=7.5,
+        strength=1.0,
+        image_size=512,
+    )
+
+    prediction_dir = PREDICTIONS_DIR / model_name
+    prediction_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+    # Persist the 512x512 pre-op that actually went into the model (the
+    # pipeline resized internally, but we save the same dimensions so the
+    # frontend pre/gen pair is visually aligned).
+    pre_512 = pre_image.resize((512, 512), Image.LANCZOS) if pre_image.size != (512, 512) else pre_image
+    pre_path = prediction_dir / f"{timestamp}_pre.png"
+    pre_512.save(pre_path)
+    gen_path = prediction_dir / f"{timestamp}_generated.png"
+    generated.save(gen_path)
+    mask_path = prediction_dir / f"{timestamp}_mask.png"
+    mask.save(mask_path)
+
+    reference_post_path = None
+    metrics: dict = {}
+    if post_image is not None:
+        # Paired-mode MSE on the mask region only. Full-face MSE is dominated
+        # by unchanged background pixels and isn't a useful signal for a
+        # nose-only generation task.
+        ref_path = prediction_dir / f"{timestamp}_reference.png"
+        post_512 = post_image.resize((512, 512), Image.LANCZOS) if post_image.size != (512, 512) else post_image
+        post_512.save(ref_path)
+        reference_post_path = ref_path
+
+        gen_np = np.asarray(generated, dtype=np.float32) / 255.0
+        post_np = np.asarray(post_512.convert("RGB"), dtype=np.float32) / 255.0
+        mask_np = np.asarray(mask, dtype=np.float32) / 255.0  # [H, W]
+        weight = float(mask_np.sum())
+        if weight > 1e-6:
+            diff = (gen_np - post_np) ** 2  # [H, W, 3]
+            # Broadcast mask over channels and take a mask-weighted mean.
+            weighted = diff.mean(axis=-1) * mask_np
+            mse = float(weighted.sum() / weight)
+            metrics["paired_mse_nose"] = round(mse, 6)
+
+    # Landmark + description on the synthesized 256 thumbnail.
+    pre_resized = pre_image.resize((256, 256))
+    landmark_data = None
+    try:
+        lm_result = detect_landmarks(pre_resized)
+        if lm_result.face_detected and lm_result.nose_features:
+            landmark_data = {
+                "view_type": lm_result.view_type,
+                "nose_features": asdict(lm_result.nose_features),
+                "nose_roi": lm_result.nose_roi,
+            }
+    except Exception:
+        logger.warning("Landmark detection failed", exc_info=True)
+
+    description_data = None
+    try:
+        gen_for_desc = generated.resize((256, 256))
+        desc = generate_description(pre_resized, gen_for_desc)
+        if desc:
+            description_data = {
+                "changes": desc.changes,
+                "summary": desc.summary,
+                "metrics": desc.detail_metrics,
+            }
     except Exception:
         logger.warning("Description generation failed", exc_info=True)
 

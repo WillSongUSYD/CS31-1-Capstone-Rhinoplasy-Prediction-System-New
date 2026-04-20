@@ -28,6 +28,9 @@ DIST_ASSETS_DIR = DIST_DIR / "assets"
 VALID_MODEL_NAMES = {
     "autoencoder", "pix2pix", "cyclegan", "diffusion",
     "autoencoder_nose", "pix2pix_nose", "cyclegan_nose", "diffusion_nose",
+    # V4 path C: SD 1.5 Inpainting + LoRA - dispatched to a separate
+    # pipeline in backend.inference (see _is_sd_inpaint_model).
+    "sd_inpaint_nose",
 }
 
 

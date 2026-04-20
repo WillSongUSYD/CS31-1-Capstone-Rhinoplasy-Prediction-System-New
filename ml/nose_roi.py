@@ -254,6 +254,40 @@ def get_nose_roi_box(image: Image.Image) -> Tuple[int, int, int, int]:
     return _heuristic_box(w, h, bgr=bgr)
 
 
+def get_nose_mask(image: Image.Image) -> Image.Image:
+    """Return a PIL 'L' soft-edge nose mask for an image.
+
+    Same mask geometry as the training set's ``masks_512/`` (tilted ellipse
+    around the InsightFace nose axis, gaussian-softened). Needed at
+    inference time for SD Inpainting - the user uploads a pre-op face but
+    not a mask, so we synthesize one from landmarks.
+
+    Fallback: when InsightFace can't detect keypoints we derive a coarse
+    mask from the heuristic bounding box. That's uglier but beats refusing
+    to generate entirely.
+
+    Returns a PIL Image in mode 'L' with values 0-255 where 255 means
+    "regenerate here" - matches ``StableDiffusionInpaintPipeline``'s
+    mask convention.
+    """
+    w, h = image.size
+    kps = _detect_kps(image)
+    if kps is not None:
+        mask_f32 = _mask_from_kps(kps, w, h)  # float32 [0, 1]
+    else:
+        # Fallback: rectangle from heuristic box, softened.
+        bgr = cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
+        x1, y1, x2, y2 = _heuristic_box(w, h, bgr=bgr)
+        mask_f32 = np.zeros((h, w), dtype=np.float32)
+        mask_f32[y1:y2, x1:x2] = 1.0
+        mask_f32 = cv2.GaussianBlur(mask_f32, _MASK_GAUSS_KERNEL, _MASK_GAUSS_SIGMA)
+        mx = mask_f32.max()
+        if mx > 1e-6:
+            mask_f32 = mask_f32 / mx
+    mask_u8 = (mask_f32 * 255.0).clip(0, 255).astype(np.uint8)
+    return Image.fromarray(mask_u8, mode="L")
+
+
 def _clip_and_warn(
     box: Tuple[int, int, int, int], width: int, height: int, ctx: str = "crop",
 ) -> Tuple[int, int, int, int]:
