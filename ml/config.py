@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 
@@ -14,7 +15,12 @@ PAIR_256_DIR = ARTIFACTS_DIR / "dataset" / "pairs_256"
 PAIR_ALIGNED_DIR = ARTIFACTS_DIR / "dataset" / "pairs_aligned_256"
 MASK_DIR = ARTIFACTS_DIR / "dataset" / "masks_256"
 EVAL_DIR = ARTIFACTS_DIR / "eval"
-PREDICTIONS_DIR = ARTIFACTS_DIR / "predictions"
+# PREDICTIONS_DIR is read-write: the backend serve layer writes per-request
+# artefacts here. When running inside a packaged .app (read-only) the desktop
+# wrapper sets CS31_PREDICTIONS_DIR to a location under Application Support.
+PREDICTIONS_DIR = Path(
+    os.environ.get("CS31_PREDICTIONS_DIR", str(ARTIFACTS_DIR / "predictions"))
+)
 
 MANIFEST_PATH = DATA_DIR / "manifest.csv"
 SPLITS_PATH = DATA_DIR / "splits.csv"

@@ -126,5 +126,14 @@ data/manifest.csv
 # ===== Local Claude Code state =====
 .claude/
 
+# ===== Desktop build artifacts =====
+desktop/build/
+desktop/dist/
+dist/CS31Preview.app/
+dist/CS31Preview.zip
+# py2app intermediate + bundled LoRA copy at build time
+desktop/bundled_models/lora/*.safetensors
+desktop/bundled_models/insightface/models/
+
 # ===== Backend runtime =====
 data/history.sqlite3*

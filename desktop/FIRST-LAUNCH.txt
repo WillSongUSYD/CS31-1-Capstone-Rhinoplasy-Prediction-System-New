@@ -1,0 +1,32 @@
+CS31Preview · 首次使用说明
+=======================================
+
+本 App 未经苹果 Developer ID 签名(节约年费),macOS Gatekeeper
+会弹"App 来自不明开发者"的警告,无法双击直接打开。
+
+解决办法(只需第一次):
+  1. 把 CS31Preview.app 拖到"应用程序"(/Applications)
+  2. 按住 Control 点右键 → 选"打开"
+  3. 弹窗再次确认"打开"
+
+之后双击就能正常启动。
+
+---
+
+首次运行行为:
+  - 会弹出"下载模型"对话框,需要 4GB 下载(一次性)
+  - 默认走 hf-mirror.com 国内镜像,通常 5-10 分钟完成
+  - 下载完成后模型保存在:
+    ~/Library/Application Support/CS31Preview/models/
+  - 之后启动都是离线直接可用
+
+---
+
+生成结果保存位置:
+  ~/Pictures/CS31Preview/
+  (也可在"保存"对话框里改)
+
+隐私声明:
+  * 所有计算都在你的 Mac 本地完成
+  * 照片不上传任何服务器
+  * 可随时删除 ~/Library/Application Support/CS31Preview/ 清空所有数据
