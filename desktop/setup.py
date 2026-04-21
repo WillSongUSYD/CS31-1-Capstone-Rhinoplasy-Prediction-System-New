@@ -48,6 +48,40 @@ REPO = HERE.parent
 
 APP_ENTRY = [str(HERE / "app.py")]
 
+
+def _collect_dist_info() -> list[tuple[str, list[str]]]:
+    """py2app strips .dist-info/METADATA by default. Transformers (and
+    several other libs) use ``importlib.metadata.version(...)`` to
+    validate dep versions at import time — without the metadata those
+    calls raise ``PackageNotFoundError`` and the first
+    ``from transformers import AutoImageProcessor`` aborts with a
+    misleading cascade.
+
+    Fix: copy every ``*.dist-info`` directory from our venv into the
+    bundle's site-packages. ~500 KB total; cheap insurance against
+    future lib tightening.
+    """
+    venv_sp = Path(sys.executable).parent.parent / "lib" / "python3.9" / "site-packages"
+    if not venv_sp.exists():
+        # Fallback for cases where sys.executable is the driving python
+        # rather than venv (e.g. CI). Best-effort.
+        import site
+        candidates = [Path(p) for p in site.getsitepackages()]
+        candidates = [c for c in candidates if c.exists()]
+        if not candidates:
+            return []
+        venv_sp = candidates[0]
+
+    pairs: list[tuple[str, list[str]]] = []
+    for dinfo in venv_sp.glob("*.dist-info"):
+        # Each dist-info is its own destination subdir under the bundle's
+        # site-packages (``Contents/Resources/lib/python3.9/<name>``).
+        dest_rel = f"lib/python3.9/{dinfo.name}"
+        files = [str(p) for p in dinfo.iterdir() if p.is_file()]
+        if files:
+            pairs.append((dest_rel, files))
+    return pairs
+
 # -- Data files to embed inside Contents/Resources ---------------------
 # Each tuple is (relative_dest_dir_inside_Resources, [source_paths]).
 # py2app copies these verbatim. We reference them from the running app
@@ -100,6 +134,9 @@ else:
         file=sys.stderr,
     )
 
+# Tack on all dist-info directories so importlib.metadata works in-bundle.
+DATA_FILES.extend(_collect_dist_info())
+
 
 PY2APP_OPTIONS = {
     "argv_emulation": False,
@@ -118,6 +155,25 @@ PY2APP_OPTIONS = {
         "numpy",
         "onnxruntime",
         "huggingface_hub",
+        # Transitive deps that py2app doesn't always pick up through
+        # huggingface_hub's __getattr__ lazy loader. Without these the
+        # first `from transformers import AutoImageProcessor` fails
+        # inside the bundle with a misleading "Could not import module
+        # 'AutoImageProcessor'" (real cause: hf_hub → requests chain).
+        "requests",
+        "urllib3",
+        "certifi",
+        "charset_normalizer",
+        "idna",
+        "filelock",
+        "packaging",
+        "yaml",
+        "regex",
+        "tqdm",
+        "tokenizers",
+        "sklearn",  # transformers touches sklearn.utils in some paths
+        "fsspec",
+        "typing_extensions",
         # Our own packages need to ship at importable tree locations.
         "backend",
         "ml",
