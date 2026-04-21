@@ -36,6 +36,12 @@ from pathlib import Path
 
 from setuptools import setup
 
+# py2app uses modulegraph to walk the import tree. Deeply nested
+# conditional imports in torch / transformers / diffusers blow past
+# the default recursion limit of 1000. Bump it BEFORE setup() runs.
+# 10000 is comfortably beyond real-world needs for our stack.
+sys.setrecursionlimit(10000)
+
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
