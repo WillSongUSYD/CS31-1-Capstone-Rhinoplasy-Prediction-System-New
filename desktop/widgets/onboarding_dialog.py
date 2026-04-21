@@ -13,7 +13,7 @@ hit a "missing model" error.
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtWidgets import (
     QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QProgressBar,
     QPushButton, QVBoxLayout,
@@ -120,16 +120,19 @@ class OnboardingDialog(QDialog):
     def _on_done(self) -> None:
         self._bar.setValue(100)
         self._bar.setFormat("完成")
-        self._detail.setText("下载完成,点击关闭继续使用")
-        self._start_btn.setText("关闭")
+        self._detail.setText("下载完成 · 2 秒后自动进入主界面 ...")
+        self._start_btn.setText("继续")
         self._start_btn.setEnabled(True)
-        # Rebind so "Close" accepts the dialog instead of restarting.
+        # Rebind so "继续" accepts the dialog instead of restarting.
         try:
             self._start_btn.clicked.disconnect()
         except TypeError:
             pass
         self._start_btn.clicked.connect(self.accept)
         self._cancel_btn.setVisible(False)
+        # Auto-accept after 2s so a user who walked away doesn't return to
+        # a blocked UI. They can still click "继续" to skip the delay.
+        QTimer.singleShot(2000, self.accept)
 
     def _on_failed(self, reason: str) -> None:
         self._start_btn.setEnabled(True)
