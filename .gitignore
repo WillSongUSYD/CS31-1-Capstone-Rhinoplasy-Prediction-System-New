@@ -129,6 +129,8 @@ data/manifest.csv
 # ===== Desktop build artifacts =====
 desktop/build/
 desktop/dist/
+# py2app runs setup.py from repo root; build/ + dist/ land there too
+build/
 dist/CS31Preview.app/
 dist/CS31Preview.zip
 # py2app intermediate + bundled LoRA copy at build time
