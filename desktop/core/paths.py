@@ -1,16 +1,17 @@
 """Path resolution for bundled vs user-writable locations.
 
-macOS app bundles are READ-ONLY once signed/installed. Any file the app
+Packaged desktop apps are READ-ONLY once installed. Any file the app
 needs to write (downloaded SD base model, generated result images, config
-cache) must go to ``~/Library/Application Support/CS31Preview/``.
+cache) must go to the user's application-data directory.
 
 This module exposes two families:
 
-* ``bundle_*()`` — resources shipped inside the ``.app`` (read-only):
-  V6 LoRA, face_landmarker.task, bundled InsightFace buffalo_l.
+* ``bundle_*()`` — resources shipped inside the app bundle/build output
+  (read-only): V6 LoRA, face_landmarker.task, bundled InsightFace buffalo_l.
 
-* ``user_*()`` — user-writable state under Application Support:
-  downloaded SD base, config.json, saved outputs, logs.
+* ``user_*()`` — user-writable state under Application Support on macOS
+  or AppData on Windows: downloaded SD base, config.json, saved outputs,
+  logs.
 """
 from __future__ import annotations
 
@@ -40,6 +41,10 @@ def bundle_root() -> Path:
     Frozen bundle: ``<App>.app/Contents/Resources/desktop/``
     """
     if _is_frozen():
+        # PyInstaller sets sys._MEIPASS to the temporary/extracted bundle
+        # root. Our Windows spec copies resources under desktop/.
+        if hasattr(sys, "_MEIPASS"):
+            return Path(sys._MEIPASS) / "desktop"
         # py2app copies the entire ``desktop`` package into Resources.
         # sys.executable → <App>.app/Contents/MacOS/CS31Preview
         app_root = Path(sys.executable).resolve().parent.parent
@@ -49,7 +54,19 @@ def bundle_root() -> Path:
 
 def bundle_lora() -> Path:
     """V6 LoRA safetensors shipped inside the .app."""
-    return bundle_root() / "bundled_models" / "lora"
+    bundled = bundle_root() / "bundled_models" / "lora"
+    if _is_frozen() or (bundled / "pytorch_lora_weights.safetensors").exists():
+        return bundled
+    source_tree = (
+        Path(__file__).resolve().parents[2]
+        / "models"
+        / "outcome_v3_512"
+        / "sd_inpaint_nose_v6"
+        / "step_10000"
+    )
+    if (source_tree / "pytorch_lora_weights.safetensors").exists():
+        return source_tree
+    return bundled
 
 
 def bundle_insightface() -> Path:
@@ -62,17 +79,34 @@ def bundle_insightface() -> Path:
     return bundle_root() / "bundled_models" / "insightface"
 
 
+def insightface_home_dir() -> Path:
+    """Where InsightFace should look for or download ONNX face models."""
+    bundled = bundle_insightface()
+    if (bundled / "models" / "buffalo_l").exists():
+        return bundled
+    d = user_support_dir() / "insightface"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def bundle_face_landmarker() -> Path:
     """MediaPipe face_landmarker.task file."""
     return bundle_root() / "bundled_models" / "face_landmarker.task"
 
 
 def user_support_dir() -> Path:
-    """``~/Library/Application Support/CS31Preview/``. Writable.
+    """Per-user writable app state directory.
 
     Created on first access.
     """
-    d = Path.home() / "Library" / "Application Support" / _APP_NAME
+    if sys.platform.startswith("win"):
+        root = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
+        d = Path(root) / _APP_NAME if root else Path.home() / "AppData" / "Roaming" / _APP_NAME
+    elif sys.platform == "darwin":
+        d = Path.home() / "Library" / "Application Support" / _APP_NAME
+    else:
+        root = os.environ.get("XDG_DATA_HOME")
+        d = Path(root) / _APP_NAME if root else Path.home() / ".local" / "share" / _APP_NAME
     d.mkdir(parents=True, exist_ok=True)
     return d
 

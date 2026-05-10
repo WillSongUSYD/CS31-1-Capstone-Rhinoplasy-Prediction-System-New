@@ -50,7 +50,7 @@ class SDBaseDownloader(QThread):
     Signals:
       * ``bytes_progress(downloaded, total, label)`` — after each chunk
         the running tqdm counters are re-read and emitted for the UI to
-        render as progress bar + label ("正在下载 unet/...bin")
+        render as a progress bar + label ("Downloading unet/...bin")
       * ``finished_ok()`` — emitted when snapshot_download returns
       * ``failed(reason)`` — emitted on any exception
     """

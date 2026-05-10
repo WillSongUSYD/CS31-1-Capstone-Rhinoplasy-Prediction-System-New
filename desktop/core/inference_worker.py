@@ -23,6 +23,12 @@ from typing import Optional
 from PyQt6.QtCore import QThread, pyqtSignal
 from PIL import Image
 
+from .image_geometry import (
+    apply_square_canvas_transform,
+    fit_image_to_square_canvas,
+    restore_from_square_canvas,
+)
+
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +64,8 @@ class InferenceWorker(QThread):
 
     Signals:
       * ``progress(current_step, total_steps)`` — once per denoising step
-      * ``finished(PIL.Image, PIL.Image)`` — (pre resized to image_size, generated)
-        emitted on success
+      * ``finished(PIL.Image, PIL.Image)`` — original pre-op image and generated
+        image restored to the original aspect ratio
       * ``failed(str reason)`` — emitted on cancel / error
     """
 
@@ -92,20 +98,12 @@ class InferenceWorker(QThread):
             # Usually: SD base model missing (first launch didn't download).
             # Report something actionable rather than a raw path.
             logger.exception("missing SD artefact")
-            self.failed.emit(f"缺少模型文件:{exc}")
+            self.failed.emit(f"Missing model file: {exc}")
         except Exception as exc:  # pragma: no cover — surface unexpected
             logger.exception("inference failed")
-            self.failed.emit(f"推理失败:{exc}")
+            self.failed.emit(f"Inference failed: {exc}")
         else:
-            # resize pre to the same dims the pipeline used, so the
-            # BeforeAfterSlider sees matched-size inputs.
-            pre_resized = self._request.pre_image
-            if pre_resized.size != (self._request.image_size,) * 2:
-                pre_resized = pre_resized.resize(
-                    (self._request.image_size, self._request.image_size),
-                    Image.LANCZOS,
-                )
-            self.finished.emit(pre_resized, gen)
+            self.finished.emit(self._request.pre_image.copy(), gen)
 
     # ---- heavy lifting ----
 
@@ -125,6 +123,19 @@ class InferenceWorker(QThread):
         pipeline = load_sd_pipeline(req.base_dir, req.lora_dir)
         mask = get_nose_mask(req.pre_image)
 
+        pre_canvas, transform = fit_image_to_square_canvas(
+            req.pre_image,
+            req.image_size,
+            fill=(0, 0, 0),
+            resample=Image.LANCZOS,
+        )
+        mask_canvas = apply_square_canvas_transform(
+            mask,
+            transform,
+            fill=0,
+            resample=Image.BILINEAR,
+        )
+
         # Install a diffusers callback for per-step progress + cancel.
         # Older diffusers used ``callback`` (called with only step index);
         # 0.25+ switched to ``callback_on_step_end`` with a keyword-args
@@ -135,10 +146,10 @@ class InferenceWorker(QThread):
             self.progress.emit(step_index + 1, req.num_inference_steps)
             return callback_kwargs
 
-        result = generate_sd(
+        generated_canvas = generate_sd(
             pipeline,
-            req.pre_image,
-            mask,
+            pre_canvas,
+            mask_canvas,
             prompt=req.prompt,
             negative_prompt=req.negative_prompt,
             num_inference_steps=req.num_inference_steps,
@@ -147,13 +158,19 @@ class InferenceWorker(QThread):
             generator_seed=req.seed,
             image_size=req.image_size,
         )
+        result = restore_from_square_canvas(
+            generated_canvas,
+            transform,
+            resample=Image.LANCZOS,
+        )
         # NaN/inf sanity check — MPS attention sometimes produces pure
         # noise. The pipeline doesn't validate; we do.
         import numpy as np
         arr = np.asarray(result)
         if not np.isfinite(arr).all():
             raise RuntimeError(
-                "生成结果包含 NaN/Inf(MPS 数值不稳定);请在高级菜单切换到 CPU 模式"
+                "Generated image contains NaN/Inf (MPS numerical instability). "
+                "Please switch to CPU mode in the advanced menu."
             )
         logger.info("inference done")
         return result

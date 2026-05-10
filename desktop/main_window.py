@@ -7,17 +7,17 @@ from datetime import datetime
 from pathlib import Path
 
 from PIL import Image
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QPixmap, QResizeEvent
+from PyQt6.QtCore import QTimer
+from PyQt6.QtGui import QResizeEvent
 from PyQt6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+    QFrame, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
     QPushButton, QStatusBar, QVBoxLayout, QWidget,
 )
 
 from .core.inference_worker import InferenceRequest, InferenceWorker
 from .core.paths import user_output_dir
 from .core.validator import validate_image
-from .widgets.before_after import BeforeAfterSlider
+from .widgets.before_after import BeforeAfterComparison
 from .widgets.busy_overlay import BusyOverlay
 from .widgets.drop_zone import DropZone
 from .widgets.validation_report import ValidationReport
@@ -34,13 +34,13 @@ class MainWindow(QMainWindow):
     4. Pass: show preview, enable predict
     5. User clicks predict → :class:`InferenceWorker` runs, :class:`BusyOverlay`
        covers the window
-    6. Success: swap preview for :class:`BeforeAfterSlider`, enable Save
+    6. Success: show side-by-side comparison, enable Save
     """
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CS31Preview · 鼻整形术后预测")
-        self.resize(1020, 720)
+        self.setWindowTitle("CS31Preview - Rhinoplasty Outcome Studio")
+        self.resize(1180, 760)
 
         self._current_upload: Path | None = None
         self._current_pre: Image.Image | None = None  # loaded for inference
@@ -49,28 +49,87 @@ class MainWindow(QMainWindow):
 
         # ----- Central layout -----
         central = QWidget(self)
+        central.setObjectName("AppShell")
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(16)
+        root.setContentsMargins(28, 26, 28, 22)
+        root.setSpacing(18)
 
-        # Top row: drop zone (left) + before/after OR preview (right)
+        # Header: make the app feel like a premium consultation tool instead
+        # of a plain engineering demo.
+        self._hero_header = QFrame(self)
+        self._hero_header.setObjectName("HeroHeader")
+        header_layout = QVBoxLayout(self._hero_header)
+        header_layout.setContentsMargins(24, 20, 24, 20)
+        header_layout.setSpacing(6)
+
+        eyebrow = QLabel("CS31Preview Consultation Suite", self)
+        eyebrow.setObjectName("HeroEyebrow")
+        header_layout.addWidget(eyebrow)
+
+        title = QLabel("Rhinoplasty Outcome Preview", self)
+        title.setObjectName("HeroTitle")
+        header_layout.addWidget(title)
+
+        subtitle = QLabel(
+            "Upload a clean side-profile portrait to visualize a natural, "
+            "personalized nasal refinement preview while preserving the original face.",
+            self,
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setObjectName("HeroSubtitle")
+        header_layout.addWidget(subtitle)
+
+        root.addWidget(self._hero_header)
+
+        # Top row: drop zone (left) + preview/result comparison (right).
         top = QHBoxLayout()
-        top.setSpacing(16)
+        top.setSpacing(20)
+
+        self._left_rail = QFrame(self)
+        self._left_rail.setObjectName("ConsultationRail")
+        self._left_rail.setMinimumWidth(390)
+        self._left_rail.setMaximumWidth(470)
+        left_rail_layout = QVBoxLayout(self._left_rail)
+        left_rail_layout.setContentsMargins(20, 20, 20, 20)
+        left_rail_layout.setSpacing(16)
+
+        guide_title = QLabel("Photo Intake", self)
+        guide_title.setObjectName("SectionTitle")
+        left_rail_layout.addWidget(guide_title)
+
+        guide_body = QLabel(
+            "For the most reliable preview, use a clinical-style profile photo.",
+            self,
+        )
+        guide_body.setWordWrap(True)
+        guide_body.setObjectName("MutedBody")
+        left_rail_layout.addWidget(guide_body)
 
         self._drop = DropZone(self)
         self._drop.fileDropped.connect(self._on_file_dropped)
-        top.addWidget(self._drop, stretch=1)
+        left_rail_layout.addWidget(self._drop)
 
-        # We use ONE widget that doubles as preview AND slider:
-        # - Before inference: acts as a QLabel-like preview (via its
-        #   placeholder rendering + set_images with the same image twice
-        #   so the slider shows a single image).
-        # - After inference: shows pre + generated with draggable slider.
-        # This avoids a layout reshuffle (preview disappearing, slider
-        # appearing) which feels janky to the user.
-        self._slider = BeforeAfterSlider(self)
-        top.addWidget(self._slider, stretch=1)
+        requirements = self._build_requirements_card()
+        left_rail_layout.addWidget(requirements)
+        left_rail_layout.addStretch()
+        top.addWidget(self._left_rail, stretch=0)
+
+        # Before inference this acts as a single-image preview. After
+        # inference it becomes the full-width left/right comparison panel.
+        self._result_stage = QFrame(self)
+        self._result_stage.setObjectName("ResultStage")
+        stage_layout = QVBoxLayout(self._result_stage)
+        stage_layout.setContentsMargins(18, 18, 18, 18)
+        stage_layout.setSpacing(10)
+
+        self._stage_label = QLabel("Preview Studio", self)
+        self._stage_label.setObjectName("StageTitle")
+        stage_layout.addWidget(self._stage_label)
+
+        self._comparison = BeforeAfterComparison(self)
+        stage_layout.addWidget(self._comparison, stretch=1)
+        top.addWidget(self._result_stage, stretch=1)
 
         root.addLayout(top)
 
@@ -83,16 +142,25 @@ class MainWindow(QMainWindow):
         actions.setSpacing(12)
         actions.addStretch()
 
-        self._predict_btn = QPushButton("生成术后图", self)
+        self._change_btn = QPushButton("Choose Another Photo", self)
+        self._change_btn.setObjectName("SaveButton")
+        self._change_btn.setVisible(False)
+        self._change_btn.setMinimumHeight(44)
+        self._change_btn.clicked.connect(self._on_choose_another_clicked)
+        actions.addWidget(self._change_btn)
+
+        self._predict_btn = QPushButton("Retry Prediction", self)
         self._predict_btn.setObjectName("PredictButton")
         self._predict_btn.setEnabled(False)
+        self._predict_btn.setVisible(False)
         self._predict_btn.setMinimumHeight(44)
         self._predict_btn.clicked.connect(self._on_predict_clicked)
         actions.addWidget(self._predict_btn)
 
-        self._save_btn = QPushButton("保存结果", self)
+        self._save_btn = QPushButton("Save Result", self)
         self._save_btn.setObjectName("SaveButton")
         self._save_btn.setEnabled(False)
+        self._save_btn.setVisible(False)
         self._save_btn.setMinimumHeight(44)
         self._save_btn.clicked.connect(self._on_save_clicked)
         actions.addWidget(self._save_btn)
@@ -108,7 +176,36 @@ class MainWindow(QMainWindow):
         # ----- Status bar -----
         self._status = QStatusBar(self)
         self.setStatusBar(self._status)
-        self._status.showMessage("拖入你的侧脸照片开始")
+        self._status.showMessage("Drag in a side-profile photo to start")
+        self._set_intake_mode()
+
+    def _build_requirements_card(self) -> QFrame:
+        card = QFrame(self)
+        card.setObjectName("RequirementsCard")
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(9)
+
+        title = QLabel("Upload Requirements", self)
+        title.setObjectName("RequirementsTitle")
+        layout.addWidget(title)
+
+        items = [
+            "One person only.",
+            "Upright side profile; no frontal selfies.",
+            "Nose, eyes, and mouth clearly visible.",
+            "Plain white, grey, or dark background.",
+            "Short side at least 512 px.",
+            "Avoid hair, hands, masks, or heavy shadows.",
+            "Formats: JPG, PNG, WEBP, BMP, HEIC.",
+        ]
+        for item in items:
+            row = QLabel(f"- {item}", self)
+            row.setWordWrap(True)
+            row.setObjectName("RequirementItem")
+            layout.addWidget(row)
+
+        return card
 
     # ------------------------------------------------------------------
     # Layout upkeep
@@ -130,35 +227,38 @@ class MainWindow(QMainWindow):
         # Clear any previous generation.
         self._generated = None
         self._save_btn.setEnabled(False)
+        self._set_intake_mode()
 
         # Load + preview first so the window is responsive during
         # validation (InsightFace first-call ~3-5s cold).
         try:
             pre_pil = Image.open(self._current_upload).convert("RGB")
         except (OSError, ValueError) as exc:
-            self._report.show_errors([f"无法读取图片({exc.__class__.__name__})"])
+            self._report.show_errors([f"Could not read image ({exc.__class__.__name__})"])
             self._predict_btn.setEnabled(False)
-            self._status.showMessage("读取失败")
+            self._status.showMessage("Failed to read image")
             return
 
         self._current_pre = pre_pil
-        # Show the uploaded image in the slider as both "before" and "after"
-        # so the user sees it immediately. When inference finishes we
-        # replace "after" with the generated version.
-        self._slider.set_images(pre_pil, pre_pil)
+        # Show a single-photo preview immediately. When inference finishes,
+        # the same widget switches to a side-by-side comparison.
+        self._comparison.set_images(pre_pil)
 
-        self._status.showMessage("正在检查照片 ...")
+        self._status.showMessage("Checking photo ...")
         self.repaint()
 
         result = validate_image(self._current_upload)
         if result.passed:
             self._report.clear()
-            self._predict_btn.setEnabled(True)
-            self._status.showMessage("检查通过,可点击生成")
+            self._status.showMessage("Photo accepted. Generating preview...")
+            QTimer.singleShot(0, self._on_predict_clicked)
         else:
             self._report.show_errors(result.errors)
             self._predict_btn.setEnabled(False)
-            self._status.showMessage(f"不符合要求({len(result.errors)} 项问题)")
+            self._predict_btn.setVisible(False)
+            self._status.showMessage(
+                f"Requirements not met ({len(result.errors)} issue(s))"
+            )
 
     # ------------------------------------------------------------------
     # Predict + worker lifecycle
@@ -166,6 +266,8 @@ class MainWindow(QMainWindow):
 
     def _on_predict_clicked(self) -> None:
         if self._current_pre is None:
+            return
+        if self._worker is not None:
             return
         base_dir = Path(os.environ["CS31_SD_BASE_DIR"])
         lora_dir = Path(os.environ["CS31_SD_LORA_DIR"])
@@ -175,12 +277,15 @@ class MainWindow(QMainWindow):
         from .core.paths import is_sd_base_present
         if not is_sd_base_present():
             QMessageBox.warning(
-                self, "缺少基础模型",
-                "还没下载 Stable Diffusion 基础模型(4GB)。"
-                "这个版本请先手动放到:\n"
+                self, "Missing Base Model",
+                "The Stable Diffusion base model (4 GB) has not been downloaded yet. "
+                "For this build, please place it manually at:\n"
                 f"{base_dir}\n\n"
-                "Phase 4 会加入自动下载。",
+                "The first-launch downloader can install this automatically.",
             )
+            self._predict_btn.setText("Retry Prediction")
+            self._predict_btn.setVisible(True)
+            self._predict_btn.setEnabled(True)
             return
 
         request = InferenceRequest(
@@ -191,9 +296,10 @@ class MainWindow(QMainWindow):
 
         self._busy.reset()
         self._busy.setVisible(True)
+        self._set_generating_mode()
         self._predict_btn.setEnabled(False)
         self._save_btn.setEnabled(False)
-        self._status.showMessage("正在生成 ...")
+        self._status.showMessage("Generating ...")
 
         self._worker = InferenceWorker(request, parent=self)
         self._worker.progress.connect(self._busy.set_progress)
@@ -205,27 +311,32 @@ class MainWindow(QMainWindow):
         if self._worker is not None:
             logger.info("user cancelled inference")
             self._worker.cancel()
-            self._busy._hint.setText("正在取消 ...")  # noqa: SLF001 (internal UI)
+            self._busy._hint.setText("Cancelling ...")  # noqa: SLF001 (internal UI)
 
     def _on_inference_finished(self, pre_pil, gen_pil) -> None:
         self._generated = gen_pil
-        self._slider.set_images(pre_pil, gen_pil)
+        self._comparison.set_images(pre_pil, gen_pil)
         self._busy.setVisible(False)
-        self._predict_btn.setEnabled(True)
+        self._set_result_mode()
         self._save_btn.setEnabled(True)
-        self._status.showMessage("完成 · 拖动分割线对比前后")
+        self._status.showMessage("Preview ready. Compare the original and predicted result.")
         self._worker = None
 
     def _on_inference_failed(self, reason: str) -> None:
         self._busy.setVisible(False)
+        self._predict_btn.setText("Retry Prediction")
+        self._predict_btn.setVisible(self._current_pre is not None)
         self._predict_btn.setEnabled(self._current_pre is not None)
+        self._save_btn.setEnabled(False)
+        self._save_btn.setVisible(False)
+        self._change_btn.setVisible(self._generated is not None)
         self._worker = None
         if reason == "cancelled":
-            self._status.showMessage("已取消")
+            self._status.showMessage("Cancelled")
             return
         logger.warning("inference failed: %s", reason)
-        self._status.showMessage(f"失败:{reason}")
-        QMessageBox.warning(self, "生成失败", reason)
+        self._status.showMessage(f"Failed: {reason}")
+        QMessageBox.warning(self, "Generation Failed", reason)
 
     # ------------------------------------------------------------------
     # Save
@@ -237,7 +348,7 @@ class MainWindow(QMainWindow):
         default_name = datetime.now().strftime("CS31_%Y%m%d_%H%M%S.png")
         default_dir = user_output_dir()
         path, _ = QFileDialog.getSaveFileName(
-            self, "保存生成结果",
+            self, "Save Generated Result",
             str(default_dir / default_name),
             "PNG (*.png);;JPEG (*.jpg)",
         )
@@ -246,6 +357,43 @@ class MainWindow(QMainWindow):
         try:
             self._generated.save(path)
         except (OSError, ValueError) as exc:
-            QMessageBox.warning(self, "保存失败", str(exc))
+            QMessageBox.warning(self, "Save Failed", str(exc))
             return
-        self._status.showMessage(f"已保存到 {path}")
+        self._status.showMessage(f"Saved to {path}")
+
+    def _on_choose_another_clicked(self) -> None:
+        self._set_intake_mode()
+        if not self._drop.open_file_dialog() and self._generated is not None:
+            self._set_result_mode()
+
+    def _set_intake_mode(self) -> None:
+        self._hero_header.setVisible(True)
+        self._left_rail.setVisible(True)
+        self._stage_label.setVisible(True)
+        self._drop.setVisible(True)
+        self._change_btn.setVisible(False)
+        self._predict_btn.setVisible(False)
+        self._save_btn.setEnabled(False)
+        self._save_btn.setVisible(False)
+        self._comparison.set_result_mode(False)
+
+    def _set_generating_mode(self) -> None:
+        self._hero_header.setVisible(True)
+        self._left_rail.setVisible(True)
+        self._stage_label.setVisible(True)
+        self._drop.setVisible(True)
+        self._change_btn.setVisible(False)
+        self._predict_btn.setVisible(False)
+        self._save_btn.setEnabled(False)
+        self._save_btn.setVisible(False)
+        self._comparison.set_result_mode(False)
+
+    def _set_result_mode(self) -> None:
+        self._hero_header.setVisible(False)
+        self._left_rail.setVisible(False)
+        self._stage_label.setVisible(False)
+        self._change_btn.setVisible(True)
+        self._predict_btn.setVisible(False)
+        self._save_btn.setEnabled(True)
+        self._save_btn.setVisible(True)
+        self._comparison.set_result_mode(True)

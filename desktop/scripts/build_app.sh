@@ -68,7 +68,7 @@ echo "== verify =="
 # like code-signing attributes; plain zip strips those).
 echo "== zip =="
 rm -f dist/CS31Preview.zip
-cd dist && ditto -c -k --sequesterRsrc --keepParent CS31Preview.app CS31Preview.zip
+(cd dist && ditto -c -k --sequesterRsrc --keepParent CS31Preview.app CS31Preview.zip)
 
 echo
 echo "== done =="

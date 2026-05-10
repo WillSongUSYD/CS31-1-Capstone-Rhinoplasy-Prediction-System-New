@@ -15,8 +15,8 @@ import os
 from dataclasses import dataclass
 
 from .paths import (
-    bundle_insightface,
     bundle_lora,
+    insightface_home_dir,
     user_config_path,
     user_predictions_dir,
     user_sd_base_dir,
@@ -42,9 +42,9 @@ def install_environment() -> None:
     os.environ.setdefault("CS31_PREDICTIONS_DIR", str(user_predictions_dir()))
 
     # InsightFace looks for its ONNX models here before trying to download.
-    # We ship buffalo_l inside the bundle, so this MUST point at the
-    # bundled copy for offline first-launch to work.
-    os.environ.setdefault("INSIGHTFACE_HOME", str(bundle_insightface()))
+    # Use bundled ONNX files when present; otherwise download/cache in the
+    # user's writable app-data directory (important for Windows builds).
+    os.environ.setdefault("INSIGHTFACE_HOME", str(insightface_home_dir()))
 
     # Use hf-mirror for the 4GB base-model download (China-first dataset;
     # user's docs confirm 5+ MB/s from this mirror). Downstream code just

@@ -36,7 +36,7 @@ class BusyOverlay(QFrame):
         pl.setSpacing(16)
         pl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        title = QLabel("正在生成术后图 ...", panel)
+        title = QLabel("Generating predicted after image ...", panel)
         title.setObjectName("BusyTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pl.addWidget(title)
@@ -48,13 +48,16 @@ class BusyOverlay(QFrame):
         self._bar.setTextVisible(True)
         pl.addWidget(self._bar)
 
-        self._hint = QLabel("预计 30-60 秒(首次可能更慢,加载 4GB 模型)", panel)
+        self._hint = QLabel(
+            "Estimated 30-60 seconds (the first run may be slower while loading the 4 GB model)",
+            panel,
+        )
         self._hint.setObjectName("BusyHint")
         self._hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._hint.setWordWrap(True)
         pl.addWidget(self._hint)
 
-        cancel = QPushButton("取消", panel)
+        cancel = QPushButton("Cancel", panel)
         cancel.setObjectName("BusyCancel")
         cancel.clicked.connect(self.cancelled.emit)
         pl.addWidget(cancel)
@@ -69,8 +72,8 @@ class BusyOverlay(QFrame):
     def set_progress(self, current: int, total: int) -> None:
         pct = int(100 * current / max(1, total))
         self._bar.setValue(pct)
-        self._bar.setFormat(f"第 {current} 步 / 共 {total} 步")
+        self._bar.setFormat(f"Step {current} of {total}")
 
     def reset(self) -> None:
         self._bar.setValue(0)
-        self._bar.setFormat("正在载入模型 ...")
+        self._bar.setFormat("Loading model ...")

@@ -30,12 +30,15 @@ class DropZone(QFrame):
         super().__init__(parent)
         self.setObjectName("DropZone")
         self.setAcceptDrops(True)
-        self.setMinimumHeight(240)
+        self.setMinimumHeight(190)
         self.setFrameShape(QFrame.Shape.StyledPanel)
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label = QLabel("拖入你的侧脸照片\n或点击这里选择", self)
+        self._label = QLabel(
+            "Drop a profile portrait\nor click to select a photo",
+            self,
+        )
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._label.setObjectName("DropZoneLabel")
         layout.addWidget(self._label)
@@ -48,18 +51,20 @@ class DropZone(QFrame):
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._open_file_dialog()
+            self.open_file_dialog()
         super().mousePressEvent(event)
 
-    def _open_file_dialog(self):
+    def open_file_dialog(self) -> bool:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "选择你的侧脸照片",
+            "Choose your side-profile photo",
             str(Path.home() / "Pictures"),
-            "图片文件 (*.jpg *.jpeg *.png *.webp *.bmp *.heic)",
+            "Image files (*.jpg *.jpeg *.png *.webp *.bmp *.heic)",
         )
         if path:
             self.fileDropped.emit(path)
+            return True
+        return False
 
     # ---- drag-drop handling ----
 

@@ -1,0 +1,34 @@
+CS31Preview - Windows First Launch Guide
+========================================
+
+This Windows package has the same user-facing function as the macOS app:
+upload a side-profile photo, generate a predicted rhinoplasty outcome,
+compare the original and predicted result side by side, and save the
+generated image.
+
+Recommended test flow:
+
+  1. Unzip the Windows source package.
+  2. Double-click RUN_WINDOWS.bat.
+  3. The script creates a local .venv and installs dependencies.
+  4. The app opens as CS31Preview.
+  5. On first launch, the app downloads the Stable Diffusion Inpainting
+     base model, about 4 GB. Do this before any live demonstration.
+  6. Upload a clear side-profile image and click Generate Prediction.
+  7. Save the generated result with Save Result.
+
+Optional executable build:
+
+  1. Double-click BUILD_WINDOWS_EXE.bat on a Windows machine.
+  2. The output will be dist\CS31Preview_Windows.zip.
+  3. Send that zip to other Windows users.
+
+Important notes:
+
+  * The Windows executable must be built on Windows. PyInstaller cannot
+    reliably cross-compile a Windows .exe from macOS.
+  * The 4 GB Stable Diffusion base model is not included in the package.
+  * Generated images are saved under the user's Pictures\CS31Preview
+    folder by default.
+  * Runtime data and downloaded models are stored under AppData\Roaming
+    \CS31Preview on Windows.

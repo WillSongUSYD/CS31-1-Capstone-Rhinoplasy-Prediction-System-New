@@ -56,7 +56,7 @@ BG_PATCH_SIZE = 64         # sample patch side length in pixels
 class ValidationResult:
     """Aggregate result of all 5 checks.
 
-    ``errors`` holds user-facing Chinese strings; order is stable so the
+    ``errors`` holds user-facing English strings; order is stable so the
     UI can render them top-to-bottom without sorting.
 
     ``face_bbox`` is returned when InsightFace found a face (even if
@@ -92,7 +92,7 @@ def validate_image(path: Path | str) -> ValidationResult:
     try:
         pil = Image.open(path).convert("RGB")
     except (OSError, ValueError) as exc:
-        result.fail(f"无法读取图片({exc.__class__.__name__})")
+        result.fail(f"Could not read image ({exc.__class__.__name__})")
         return result
 
     # Check 1 — resolution.
@@ -100,7 +100,8 @@ def validate_image(path: Path | str) -> ValidationResult:
     short = min(w, h)
     if short < MIN_SHORT_SIDE_PX:
         result.fail(
-            f"照片太小(当前短边 {short}px),请用 {MIN_SHORT_SIDE_PX}px 以上的清晰照片"
+            f"Photo is too small (current short side: {short}px). "
+            f"Please use a clear photo with the short side at least {MIN_SHORT_SIDE_PX}px."
         )
         # Resolution failure is still recoverable for the other checks
         # (InsightFace and the HSV sampling both cope with small images),
@@ -111,15 +112,18 @@ def validate_image(path: Path | str) -> ValidationResult:
 
     # Check 2 — face count.
     if faces == 0:
-        result.fail("没检测到人脸,换张清晰的侧脸照试试")
+        result.fail("No face detected. Try a clearer side-profile photo.")
     elif faces > 1:
-        result.fail(f"检测到 {faces} 张人脸,请只放你自己的照片")
+        result.fail(f"Detected {faces} faces. Please upload a photo with only one person.")
 
     # Check 3 — landmarks (subset of check 2 but reported separately
     # because kps can fail even when face count is 1, e.g. extreme profile
     # where the det head loses the 5-point keypoint pass).
     if faces == 1 and kps is None:
-        result.fail("检测不到人脸关键点,可能是头发/手/光线遮挡,换张试试")
+        result.fail(
+            "Could not detect facial landmarks. Hair, hands, or poor lighting "
+            "may be blocking the face. Try another photo."
+        )
 
     # Stash the face geometry for downstream consumers regardless of
     # whether orientation/background checks pass.
@@ -219,8 +223,9 @@ def _check_side_profile(kps: np.ndarray) -> Optional[str]:
     tilt_deg = math.degrees(math.atan2(dx, dy))
     if abs(tilt_deg) > MAX_TILT_DEG:
         return (
-            f"头部姿态异常(倾角 {abs(tilt_deg):.0f}°),"
-            f"请正对相机的侧面,不要仰拍不要躺着"
+            f"Head pose looks unusual (tilt {abs(tilt_deg):.0f} degrees). "
+            "Please use an upright side-profile photo, not an overhead, "
+            "low-angle, or lying-down shot."
         )
 
     # Profile vs frontal: |nose_tip.x - eye_mid.x| / inter-eye distance.
@@ -233,7 +238,7 @@ def _check_side_profile(kps: np.ndarray) -> Optional[str]:
     nose_offset = abs(nose_tip[0] - eye_mid[0])
     profile_ratio = nose_offset / eye_sep
     if profile_ratio < MIN_PROFILE_RATIO:
-        return "这像是正脸照,请拍一张你的侧面照片"
+        return "This looks like a frontal photo. Please upload a side-profile photo."
 
     return None
 
@@ -298,6 +303,7 @@ def _check_white_background(
         dark_ok = mean_v <= BG_MAX_VALUE_DARK and mean_s <= BG_MAX_SATURATION
         if not (bright_ok or dark_ok):
             return (
-                "背景色太杂,请对着纯色墙(白色最佳)拍,避免花纹或彩色背景"
+                "The background is too busy. Please take the photo against a plain wall "
+                "(white is best), avoiding patterns or colorful backgrounds."
             )
     return None

@@ -1,32 +1,32 @@
-CS31Preview · 首次使用说明
+CS31Preview - First Launch Guide
 =======================================
 
-本 App 未经苹果 Developer ID 签名(节约年费),macOS Gatekeeper
-会弹"App 来自不明开发者"的警告,无法双击直接打开。
+This app is not signed with an Apple Developer ID, so macOS Gatekeeper
+may show an "unidentified developer" warning and block a normal double-click launch.
 
-解决办法(只需第一次):
-  1. 把 CS31Preview.app 拖到"应用程序"(/Applications)
-  2. 按住 Control 点右键 → 选"打开"
-  3. 弹窗再次确认"打开"
+First-time workaround:
+  1. Drag CS31Preview.app into Applications (/Applications).
+  2. Control-click or right-click the app, then choose "Open".
+  3. Confirm "Open" again in the macOS warning dialog.
 
-之后双击就能正常启动。
+After this first approval, double-click launch should work normally.
 
 ---
 
-首次运行行为:
-  - 会弹出"下载模型"对话框,需要 4GB 下载(一次性)
-  - 默认走 hf-mirror.com 国内镜像,通常 5-10 分钟完成
-  - 下载完成后模型保存在:
+First-run behavior:
+  - The app will show a "Download Model" dialog and download about 4 GB once.
+  - By default, it uses the hf-mirror.com mirror and usually finishes in 5-10 minutes.
+  - After download, the model is stored at:
     ~/Library/Application Support/CS31Preview/models/
-  - 之后启动都是离线直接可用
+  - Future launches can run offline using the local model.
 
 ---
 
-生成结果保存位置:
+Generated result save location:
   ~/Pictures/CS31Preview/
-  (也可在"保存"对话框里改)
+  (You can also choose another location in the Save dialog.)
 
-隐私声明:
-  * 所有计算都在你的 Mac 本地完成
-  * 照片不上传任何服务器
-  * 可随时删除 ~/Library/Application Support/CS31Preview/ 清空所有数据
+Privacy:
+  * All computation runs locally on your Mac.
+  * Photos are not uploaded to any server.
+  * You can delete ~/Library/Application Support/CS31Preview/ at any time to clear local data.

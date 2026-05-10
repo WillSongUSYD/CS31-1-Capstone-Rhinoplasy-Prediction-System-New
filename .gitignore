@@ -111,6 +111,9 @@ reports/*.jpeg
 reports/*.png
 reports/*.pdf
 
+# ===== Local teammate handoff packages =====
+handoff/
+
 # ===== Logs =====
 *.log
 

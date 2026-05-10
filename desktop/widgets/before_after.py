@@ -1,169 +1,154 @@
-"""Before/After comparison slider.
+"""Side-by-side before/after comparison widget.
 
-Two images are rendered in the same rectangle with a vertical divider;
-everything LEFT of the divider is the "before" image, everything RIGHT
-is the "after" (generated) image. The user drags the divider to reveal
-more of either side.
-
-Implementation is a plain ``QWidget`` with a custom ``paintEvent`` — no
-``QGraphicsView`` — because we only need a single static-composite
-rendering; the graphics-view machinery (transform stacks, scene
-coordinate system, item-pick handling) buys us nothing for this UX.
+The generated result page uses two independent image panels instead of a
+draggable split slider. Each image is aspect-fit into its own panel, so
+portrait uploads keep their original proportions on screen.
 """
 from __future__ import annotations
 
 from PIL import Image
 
-from PyQt6.QtCore import QPointF, QRect, Qt
-from PyQt6.QtGui import QColor, QImage, QMouseEvent, QPainter, QPen, QPixmap
+from PyQt6.QtCore import QRect, Qt
+from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 
 def _pil_to_qpixmap(img: Image.Image) -> QPixmap:
-    """Convert a PIL RGB image to a QPixmap via raw bytes.
+    """Convert a PIL RGB image to a QPixmap via raw bytes."""
 
-    QImage expects 32bpp RGBA8888 for the cleanest path; rather than
-    introduce a PIL→QImage format handshake, we stride through
-    ``QImage.Format_RGBA8888`` with an explicit alpha = 255 channel.
-    Slightly wasteful on memory but avoids the per-Qt-version quirks
-    around Format_RGB888 bytes-per-line padding.
-    """
     rgba = img.convert("RGBA")
     data = rgba.tobytes("raw", "RGBA")
-    qimg = QImage(data, rgba.width, rgba.height, rgba.width * 4,
-                  QImage.Format.Format_RGBA8888)
-    # QImage points into ``data``; must copy before ``data`` goes out
-    # of scope at function end.
+    qimg = QImage(
+        data,
+        rgba.width,
+        rgba.height,
+        rgba.width * 4,
+        QImage.Format.Format_RGBA8888,
+    )
     return QPixmap.fromImage(qimg.copy())
 
 
-class BeforeAfterSlider(QWidget):
-    """Widget that overlays two images with a draggable vertical divider.
-
-    Call :meth:`set_images(pre, post)` to populate; call :meth:`clear()`
-    to show the placeholder message again.
-    """
+class BeforeAfterComparison(QWidget):
+    """Render a selected photo or a left/right original-vs-generated result."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("BeforeAfter")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setMinimumSize(512, 320)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.setMouseTracking(True)
 
-        self._pre: QPixmap | None = None
-        self._post: QPixmap | None = None
-        # divider_frac is a float in [0, 1] representing the vertical
-        # split position as a fraction of the drawn image rect width.
-        # 0.5 = middle, 1.0 = fully "before", 0.0 = fully "after".
-        self._divider_frac: float = 0.5
-        self._dragging = False
+        self._original: QPixmap | None = None
+        self._predicted: QPixmap | None = None
+        self._result_mode = False
 
-    # ---- public API ----
+    def set_result_mode(self, enabled: bool) -> None:
+        self._result_mode = enabled
+        self.update()
 
-    def set_images(self, pre: Image.Image, post: Image.Image) -> None:
-        self._pre = _pil_to_qpixmap(pre)
-        self._post = _pil_to_qpixmap(post)
-        self._divider_frac = 0.5
+    def set_images(
+        self,
+        original: Image.Image,
+        predicted: Image.Image | None = None,
+    ) -> None:
+        self._original = _pil_to_qpixmap(original)
+        self._predicted = _pil_to_qpixmap(predicted) if predicted is not None else None
         self.update()
 
     def clear(self) -> None:
-        self._pre = None
-        self._post = None
+        self._original = None
+        self._predicted = None
         self.update()
-
-    # ---- painting ----
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        if self._pre is None or self._post is None:
-            # Placeholder — render the same neutral box as the preview
-            # pane's idle state so the layout doesn't jump when results
-            # arrive.
-            painter.fillRect(self.rect(), QColor("#ffffff"))
-            painter.setPen(QColor("#9ea9b0"))
+        if self._original is None:
+            painter.setPen(QColor("#9b8f82"))
             painter.drawText(
-                self.rect(), Qt.AlignmentFlag.AlignCenter,
-                "生成后这里会显示前后对比",
+                self.rect(),
+                Qt.AlignmentFlag.AlignCenter,
+                "Your consultation image will appear here",
             )
             return
 
-        # Compute the actual draw rect (aspect-fit inside widget).
-        draw = self._aspect_fit_rect()
+        if self._predicted is None:
+            self._draw_single_preview(painter)
+        else:
+            self._draw_side_by_side(painter)
 
-        # Before layer — draw fully, then clip and overdraw with After.
-        painter.drawPixmap(draw, self._pre)
+    def _draw_single_preview(self, painter: QPainter) -> None:
+        assert self._original is not None
+        bounds = self.rect().adjusted(30, 64, -30, -30)
+        painter.setPen(QColor("#94744e"))
+        painter.drawText(
+            self.rect().adjusted(30, 24, -30, 0),
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
+            "Selected Portrait",
+        )
+        self._draw_pixmap_aspect_fit(painter, self._original, bounds)
 
-        # Divider x within the widget's coord system.
-        div_x = int(draw.left() + draw.width() * self._divider_frac)
+    def _draw_side_by_side(self, painter: QPainter) -> None:
+        assert self._original is not None
+        assert self._predicted is not None
 
-        # Clip to the "after" side (right of divider) and overlay.
-        painter.save()
-        clip_rect = QRect(div_x, draw.top(), draw.right() - div_x + 1, draw.height())
-        painter.setClipRect(clip_rect)
-        painter.drawPixmap(draw, self._post)
-        painter.restore()
+        margin = 8 if self._result_mode else 20
+        gap = 14 if self._result_mode else 18
+        usable_w = max(1, self.width() - margin * 2 - gap)
+        panel_w = usable_w // 2
+        panel_h = max(1, self.height() - margin * 2)
+        left_panel = QRect(margin, margin, panel_w, panel_h)
+        right_panel = QRect(margin + panel_w + gap, margin, panel_w, panel_h)
 
-        # Divider line.
-        pen = QPen(QColor("#ffffff"))
-        pen.setWidth(2)
-        painter.setPen(pen)
-        painter.drawLine(div_x, draw.top(), div_x, draw.bottom())
+        self._draw_panel(painter, left_panel, "Original", self._original, "#53606a")
+        self._draw_panel(
+            painter,
+            right_panel,
+            "Predicted Result",
+            self._predicted,
+            "#0d5c63",
+        )
 
-        # Handle indicator — small filled circle in the middle of the
-        # divider so users understand it's draggable.
-        handle_radius = 9
-        handle_center = QPointF(div_x, draw.center().y())
-        painter.setBrush(QColor("#ffffff"))
-        painter.setPen(QPen(QColor("#0d5c63"), 2))
-        painter.drawEllipse(handle_center, handle_radius, handle_radius)
+    def _draw_panel(
+        self,
+        painter: QPainter,
+        panel: QRect,
+        title: str,
+        pixmap: QPixmap,
+        title_color: str,
+    ) -> None:
+        painter.setPen(QPen(QColor("#eadfcc"), 1))
+        painter.setBrush(QColor("#fffdf9"))
+        painter.drawRoundedRect(panel, 18, 18)
 
-        # Labels.
-        painter.setPen(QColor("#ffffff"))
-        painter.drawText(draw.adjusted(8, 8, 0, 0),
-                         Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft,
-                         "术前")
-        painter.drawText(draw.adjusted(0, 8, -8, 0),
-                         Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight,
-                         "生成术后")
+        painter.setPen(QColor(title_color))
+        title_top = 10 if self._result_mode else 14
+        image_top = 38 if self._result_mode else 54
+        image_pad = 8 if self._result_mode else 18
+        painter.drawText(
+            panel.adjusted(0, title_top, 0, 0),
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
+            title,
+        )
+        image_bounds = panel.adjusted(image_pad, image_top, -image_pad, -image_pad)
+        self._draw_pixmap_aspect_fit(painter, pixmap, image_bounds)
 
-    def _aspect_fit_rect(self) -> QRect:
-        """Fit the images (assumed square from the pipeline) into the
-        widget bounds while preserving aspect ratio."""
-        if self._pre is None:
-            return self.rect()
-        img_w = self._pre.width()
-        img_h = self._pre.height()
-        w_scale = self.width() / img_w
-        h_scale = self.height() / img_h
-        scale = min(w_scale, h_scale)
-        draw_w = int(img_w * scale)
-        draw_h = int(img_h * scale)
-        x = (self.width() - draw_w) // 2
-        y = (self.height() - draw_h) // 2
-        return QRect(x, y, draw_w, draw_h)
-
-    # ---- drag handling ----
-
-    def mousePressEvent(self, event: QMouseEvent):
-        if event.button() == Qt.MouseButton.LeftButton and self._pre is not None:
-            self._dragging = True
-            self._update_divider_from_x(event.position().x())
-
-    def mouseMoveEvent(self, event: QMouseEvent):
-        if self._dragging:
-            self._update_divider_from_x(event.position().x())
-
-    def mouseReleaseEvent(self, event: QMouseEvent):
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._dragging = False
-
-    def _update_divider_from_x(self, x: float) -> None:
-        draw = self._aspect_fit_rect()
-        if draw.width() <= 0:
+    @staticmethod
+    def _draw_pixmap_aspect_fit(
+        painter: QPainter,
+        pixmap: QPixmap,
+        bounds: QRect,
+    ) -> None:
+        if pixmap.isNull() or bounds.width() <= 0 or bounds.height() <= 0:
             return
-        frac = (x - draw.left()) / draw.width()
-        self._divider_frac = max(0.0, min(1.0, frac))
-        self.update()
+        scale = min(bounds.width() / pixmap.width(), bounds.height() / pixmap.height())
+        draw_w = max(1, int(pixmap.width() * scale))
+        draw_h = max(1, int(pixmap.height() * scale))
+        x = bounds.left() + (bounds.width() - draw_w) // 2
+        y = bounds.top() + (bounds.height() - draw_h) // 2
+        painter.drawPixmap(QRect(x, y, draw_w, draw_h), pixmap)
+
+
+# Backwards-compatible name for older imports/tests.
+BeforeAfterSlider = BeforeAfterComparison

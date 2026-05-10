@@ -28,7 +28,7 @@ class ValidationReport(QFrame):
         self._layout.setContentsMargins(16, 12, 16, 12)
         self._layout.setSpacing(4)
 
-        self._title = QLabel("这张照片不符合要求:", self)
+        self._title = QLabel("This photo does not meet the requirements:", self)
         self._title.setObjectName("ValidationReportTitle")
         self._layout.addWidget(self._title)
 

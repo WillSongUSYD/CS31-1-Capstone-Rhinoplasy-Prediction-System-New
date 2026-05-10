@@ -29,7 +29,7 @@ class OnboardingDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("首次使用 · 下载模型")
+        self.setWindowTitle("First Launch - Download Model")
         self.setModal(True)
         self.setMinimumWidth(480)
         self.setWindowFlag(Qt.WindowType.WindowCloseButtonHint, False)
@@ -40,14 +40,16 @@ class OnboardingDialog(QDialog):
         layout.setContentsMargins(24, 24, 24, 20)
         layout.setSpacing(14)
 
-        title = QLabel("首次使用需要下载 Stable Diffusion 基础模型", self)
+        title = QLabel("Download the required Stable Diffusion base model", self)
         title.setObjectName("OnboardingTitle")
         title.setWordWrap(True)
         layout.addWidget(title)
 
         body = QLabel(
-            "文件约 4GB,一次性下载(下次启动直接可用)。\n"
-            "默认走 hf-mirror.com 国内镜像,通常 5-10 分钟完成。",
+            "The file is about 4 GB. This is a one-time download; "
+            "future launches will use the local copy.\n"
+            "By default, the app uses the hf-mirror.com mirror, "
+            "which usually finishes in 5-10 minutes.",
             self,
         )
         body.setObjectName("OnboardingBody")
@@ -59,7 +61,7 @@ class OnboardingDialog(QDialog):
         self._bar.setRange(0, 100)
         self._bar.setValue(0)
         self._bar.setTextVisible(True)
-        self._bar.setFormat("准备开始 ...")
+        self._bar.setFormat("Ready to start ...")
         layout.addWidget(self._bar)
 
         self._detail = QLabel("", self)
@@ -70,11 +72,11 @@ class OnboardingDialog(QDialog):
 
         buttons = QHBoxLayout()
         buttons.addStretch()
-        self._start_btn = QPushButton("开始下载", self)
+        self._start_btn = QPushButton("Start Download", self)
         self._start_btn.setObjectName("OnboardingStart")
         self._start_btn.clicked.connect(self._start_download)
         buttons.addWidget(self._start_btn)
-        self._cancel_btn = QPushButton("取消", self)
+        self._cancel_btn = QPushButton("Cancel", self)
         self._cancel_btn.setObjectName("OnboardingCancel")
         self._cancel_btn.clicked.connect(self._cancel)
         buttons.addWidget(self._cancel_btn)
@@ -84,7 +86,7 @@ class OnboardingDialog(QDialog):
 
     def _start_download(self) -> None:
         self._start_btn.setEnabled(False)
-        self._start_btn.setText("下载中 ...")
+        self._start_btn.setText("Downloading ...")
         target = user_sd_base_dir()
         self._worker = SDBaseDownloader(target, parent=self)
         self._worker.bytes_progress.connect(self._on_progress)
@@ -95,7 +97,7 @@ class OnboardingDialog(QDialog):
     def _cancel(self) -> None:
         if self._worker is not None and self._worker.isRunning():
             self._worker.cancel()
-            self._detail.setText("正在取消 ...")
+            self._detail.setText("Cancelling ...")
         else:
             self.reject()
 
@@ -109,21 +111,23 @@ class OnboardingDialog(QDialog):
             mb_total = total / (1024 * 1024)
             self._bar.setFormat(f"{pct}%  ({mb_current:.0f} / {mb_total:.0f} MB)")
         else:
-            self._bar.setFormat(f"已下载 {current / (1024 * 1024):.0f} MB")
+            self._bar.setFormat(f"Downloaded {current / (1024 * 1024):.0f} MB")
         # Label for the current file being fetched. HF's tqdm uses
         # human names like "(…)_pytorch_model.safetensors" so keep it
         # compact.
         if label:
             trimmed = label if len(label) < 60 else "…" + label[-57:]
-            self._detail.setText(f"当前:{trimmed}")
+            self._detail.setText(f"Current: {trimmed}")
 
     def _on_done(self) -> None:
         self._bar.setValue(100)
-        self._bar.setFormat("完成")
-        self._detail.setText("下载完成 · 2 秒后自动进入主界面 ...")
-        self._start_btn.setText("继续")
+        self._bar.setFormat("Complete")
+        self._detail.setText(
+            "Download complete. The main window will open automatically in 2 seconds ..."
+        )
+        self._start_btn.setText("Continue")
         self._start_btn.setEnabled(True)
-        # Rebind so "继续" accepts the dialog instead of restarting.
+        # Rebind so "Continue" accepts the dialog instead of restarting.
         try:
             self._start_btn.clicked.disconnect()
         except TypeError:
@@ -131,14 +135,14 @@ class OnboardingDialog(QDialog):
         self._start_btn.clicked.connect(self.accept)
         self._cancel_btn.setVisible(False)
         # Auto-accept after 2s so a user who walked away doesn't return to
-        # a blocked UI. They can still click "继续" to skip the delay.
+        # a blocked UI. They can still click "Continue" to skip the delay.
         QTimer.singleShot(2000, self.accept)
 
     def _on_failed(self, reason: str) -> None:
         self._start_btn.setEnabled(True)
-        self._start_btn.setText("重试")
+        self._start_btn.setText("Retry")
         if reason == "cancelled":
-            self._detail.setText("已取消")
+            self._detail.setText("Cancelled")
         else:
-            self._detail.setText(f"失败:{reason}")
-        self._bar.setFormat("等待重试")
+            self._detail.setText(f"Failed: {reason}")
+        self._bar.setFormat("Ready to retry")

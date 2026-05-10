@@ -50,7 +50,10 @@ def probe_device(base_dir: Path, lora_dir: Path) -> tuple[str, str]:
         pipeline = load_sd_pipeline(base_dir, lora_dir)
     except Exception as exc:
         logger.warning("canary skipped: pipeline load failed: %s", exc)
-        return "cpu", ("MPS 管道加载失败,已切 CPU 模式(每次生成 3-5 分钟)")
+        return "cpu", (
+            "MPS pipeline failed to load. Switched to CPU mode "
+            "(3-5 minutes per generation)."
+        )
 
     # 64×64 canary — 4 steps @ guidance 1.0 for speed.
     # The pipeline internally enforces divisible-by-8 image_size so we
@@ -67,19 +70,28 @@ def probe_device(base_dir: Path, lora_dir: Path) -> tuple[str, str]:
         )
     except Exception as exc:
         logger.warning("MPS canary threw: %s — falling back to CPU", exc)
-        return "cpu", "MPS 生成异常,已切 CPU 模式(每次生成 3-5 分钟)"
+        return "cpu", (
+            "MPS generation failed. Switched to CPU mode "
+            "(3-5 minutes per generation)."
+        )
     dt = time.time() - t0
 
     arr = np.asarray(out, dtype=np.float32) / 255.0
     if not np.isfinite(arr).all():
         logger.warning("MPS canary produced NaN/Inf — falling back to CPU")
-        return "cpu", "MPS 数值不稳定,已切 CPU 模式(每次生成 3-5 分钟)"
+        return "cpu", (
+            "MPS numerical instability detected. Switched to CPU mode "
+            "(3-5 minutes per generation)."
+        )
 
     # Sanity: a healthy pipeline produces non-degenerate output. If std
     # is effectively zero (constant-colour output), something's wrong.
     if arr.std() < 1e-3:
         logger.warning("MPS canary output is nearly constant — fallback to CPU")
-        return "cpu", "MPS 输出异常,已切 CPU 模式(每次生成 3-5 分钟)"
+        return "cpu", (
+            "MPS output check failed. Switched to CPU mode "
+            "(3-5 minutes per generation)."
+        )
 
     logger.info("MPS canary passed in %.2fs; using MPS", dt)
     return "mps", ""
