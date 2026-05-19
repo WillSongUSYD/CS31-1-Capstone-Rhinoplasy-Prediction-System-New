@@ -1,0 +1,7 @@
+# Additional dependencies needed only for the desktop build path.
+# Not required for training / server usage; keep them out of the main
+# requirements.txt so a headless training environment doesn't pull Qt.
+
+PyQt6>=6.6
+py2app>=0.28
+huggingface_hub>=0.25   # already a dep via diffusers but pin the CLI version

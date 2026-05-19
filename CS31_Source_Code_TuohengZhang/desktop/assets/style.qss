@@ -1,0 +1,202 @@
+/* CS31Preview QSS — clean light theme for consumer-grade polish.
+ *
+ * Design language: neutral off-white background, teal primary accent,
+ * muted warm beige for emphasis. No hard shadows. Keep it calm so
+ * medical imagery reads naturally.
+ */
+
+QMainWindow,
+QWidget {
+    background-color: #f6efe6;
+    color: #2a2a2a;
+    font-family: -apple-system, "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", sans-serif;
+    font-size: 13px;
+}
+
+/* --- DropZone ------------------------------------------------- */
+
+#DropZone {
+    background-color: #ffffff;
+    border: 2px dashed #9ea9b0;
+    border-radius: 14px;
+}
+#DropZone[dropState="active"] {
+    background-color: #eaf6f7;
+    border-color: #0d5c63;
+}
+#DropZone[dropState="invalid"] {
+    background-color: #fdecea;
+    border-color: #c0392b;
+}
+#DropZoneLabel {
+    font-size: 16px;
+    color: #53606a;
+    font-weight: 500;
+}
+
+/* --- Preview pane --------------------------------------------- */
+
+#Preview {
+    background-color: #ffffff;
+    border: 1px solid #dcd2c4;
+    border-radius: 14px;
+    color: #9ea9b0;
+    font-size: 14px;
+}
+
+/* --- Validation report (failures) ----------------------------- */
+
+#ValidationReport {
+    background-color: #fdecea;
+    border: 1px solid #e5a5a0;
+    border-radius: 10px;
+}
+#ValidationReportTitle {
+    color: #a33a30;
+    font-weight: 600;
+    font-size: 13px;
+}
+#ValidationBullet {
+    color: #5a2a26;
+    font-size: 13px;
+}
+
+/* --- Primary button ------------------------------------------- */
+
+#PredictButton {
+    background-color: #0d5c63;
+    color: #ffffff;
+    border: none;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 10px 24px;
+}
+#PredictButton:hover {
+    background-color: #0e6c74;
+}
+#PredictButton:pressed {
+    background-color: #0a4f55;
+}
+#PredictButton:disabled {
+    background-color: #cfd6db;
+    color: #8a8a8a;
+}
+
+/* --- Save button (secondary) --------------------------------- */
+
+#SaveButton {
+    background-color: #ffffff;
+    color: #0d5c63;
+    border: 2px solid #0d5c63;
+    border-radius: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 8px 20px;
+}
+#SaveButton:hover {
+    background-color: #eaf6f7;
+}
+#SaveButton:disabled {
+    border-color: #cfd6db;
+    color: #8a8a8a;
+}
+
+/* --- Before/After slider -------------------------------------- */
+
+#BeforeAfter {
+    background-color: #ffffff;
+    border: 1px solid #dcd2c4;
+    border-radius: 14px;
+}
+
+/* --- Busy overlay --------------------------------------------- */
+
+#BusyOverlay {
+    background-color: rgba(0, 0, 0, 140);
+}
+#BusyPanel {
+    background-color: #ffffff;
+    border-radius: 14px;
+}
+#BusyTitle {
+    color: #0d5c63;
+    font-size: 16px;
+    font-weight: 600;
+}
+#BusyHint {
+    color: #6d7781;
+    font-size: 12px;
+}
+#BusyBar {
+    background-color: #eaf6f7;
+    border: 1px solid #dcd2c4;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 12px;
+    color: #0d5c63;
+    height: 20px;
+}
+#BusyBar::chunk {
+    background-color: #0d5c63;
+    border-radius: 6px;
+}
+#BusyCancel {
+    background-color: transparent;
+    color: #6d7781;
+    border: 1px solid #cfd6db;
+    border-radius: 8px;
+    padding: 6px 18px;
+}
+#BusyCancel:hover {
+    background-color: #f4eee5;
+}
+
+/* --- Onboarding dialog --------------------------------------- */
+
+#OnboardingTitle {
+    color: #0d5c63;
+    font-size: 15px;
+    font-weight: 600;
+}
+#OnboardingBody {
+    color: #4a5460;
+    font-size: 13px;
+}
+#OnboardingBar {
+    background-color: #eaf6f7;
+    border: 1px solid #dcd2c4;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 12px;
+    color: #0d5c63;
+    height: 22px;
+}
+#OnboardingBar::chunk {
+    background-color: #0d5c63;
+    border-radius: 6px;
+}
+#OnboardingStart {
+    background-color: #0d5c63;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    padding: 8px 18px;
+}
+#OnboardingStart:hover { background-color: #0e6c74; }
+#OnboardingStart:disabled { background-color: #cfd6db; color: #8a8a8a; }
+#OnboardingCancel {
+    background-color: transparent;
+    color: #6d7781;
+    border: 1px solid #cfd6db;
+    border-radius: 8px;
+    padding: 8px 18px;
+}
+
+/* --- Status bar ----------------------------------------------- */
+
+QStatusBar {
+    background-color: transparent;
+    color: #6d7781;
+}

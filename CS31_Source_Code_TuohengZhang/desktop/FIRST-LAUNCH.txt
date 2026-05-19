@@ -1,0 +1,32 @@
+CS31Preview - First Launch Guide
+=======================================
+
+This app is not signed with an Apple Developer ID, so macOS Gatekeeper
+may show an "unidentified developer" warning and block a normal double-click launch.
+
+First-time workaround:
+  1. Drag CS31Preview.app into Applications (/Applications).
+  2. Control-click or right-click the app, then choose "Open".
+  3. Confirm "Open" again in the macOS warning dialog.
+
+After this first approval, double-click launch should work normally.
+
+---
+
+First-run behavior:
+  - The app will show a "Download Model" dialog and download about 4 GB once.
+  - By default, it uses the hf-mirror.com mirror and usually finishes in 5-10 minutes.
+  - After download, the model is stored at:
+    ~/Library/Application Support/CS31Preview/models/
+  - Future launches can run offline using the local model.
+
+---
+
+Generated result save location:
+  ~/Pictures/CS31Preview/
+  (You can also choose another location in the Save dialog.)
+
+Privacy:
+  * All computation runs locally on your Mac.
+  * Photos are not uploaded to any server.
+  * You can delete ~/Library/Application Support/CS31Preview/ at any time to clear local data.
