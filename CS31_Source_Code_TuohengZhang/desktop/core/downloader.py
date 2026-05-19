@@ -101,9 +101,24 @@ class SDBaseDownloader(QThread):
 
             # Deferred import — huggingface_hub pulls in a few MB of
             # deps; keep them off the app launch path.
+            #
+            # Force-assign HF_ENDPOINT here (not just setdefault at startup)
+            # to cover frozen/PyInstaller environments on Windows where the
+            # constant may have been cached before install_environment() ran,
+            # or where a conflicting value was already in the process env.
+            import os
+            os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+            # Fail fast on connection hang (e.g. Windows Firewall silent block)
+            # instead of waiting forever. The _on_failed handler will surface
+            # the timeout as a retryable error rather than an invisible freeze.
+            os.environ.setdefault("HF_HUB_DOWNLOAD_TIMEOUT", "60")
+
             from huggingface_hub import snapshot_download
 
-            logger.info("starting SD base download to %s", self._target)
+            logger.info(
+                "starting SD base download to %s (endpoint=%s)",
+                self._target, os.environ["HF_ENDPOINT"],
+            )
             snapshot_download(
                 repo_id=SD_INPAINT_REPO,
                 local_dir=str(self._target),

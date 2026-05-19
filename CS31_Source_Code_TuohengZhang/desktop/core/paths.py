@@ -15,6 +15,7 @@ This module exposes two families:
 from __future__ import annotations
 
 import os
+import platform
 import sys
 from pathlib import Path
 
@@ -68,11 +69,16 @@ def bundle_face_landmarker() -> Path:
 
 
 def user_support_dir() -> Path:
-    """``~/Library/Application Support/CS31Preview/``. Writable.
+    """Platform-appropriate writable app-data directory. Created on first access.
 
-    Created on first access.
+    - Windows: ``%APPDATA%\\CS31Preview\\``
+    - macOS:   ``~/Library/Application Support/CS31Preview/``
     """
-    d = Path.home() / "Library" / "Application Support" / _APP_NAME
+    if platform.system() == "Windows":
+        appdata = os.environ.get("APPDATA")
+        d = Path(appdata) / _APP_NAME if appdata else Path.home() / _APP_NAME
+    else:
+        d = Path.home() / "Library" / "Application Support" / _APP_NAME
     d.mkdir(parents=True, exist_ok=True)
     return d
 

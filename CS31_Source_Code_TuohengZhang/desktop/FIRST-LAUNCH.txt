@@ -1,13 +1,34 @@
 CS31Preview - First Launch Guide
 =======================================
 
+---- WINDOWS USERS: READ THIS FIRST ----
+
+Before launching CS31Preview.exe for the first time, you must download
+the ~4 GB AI model manually:
+
+  1. Make sure Python is installed (https://www.python.org/downloads/).
+     During installation, check "Add Python to PATH".
+  2. Double-click "download_sd_model.bat" in this folder.
+  3. Wait for it to print "Download complete!" (10-30 minutes).
+  4. Then double-click CS31Preview.exe to launch the app.
+
+If you skip step 2-3, the app will show a download dialog that gets stuck.
+
+-----------------------------------------
+
+---- macOS USERS ----
+
 This app is not signed with an Apple Developer ID, so macOS Gatekeeper
 may show an "unidentified developer" warning and block a normal double-click launch.
 
 First-time workaround:
   1. Drag CS31Preview.app into Applications (/Applications).
   2. Control-click or right-click the app, then choose "Open".
-  3. Confirm "Open" again in the macOS warning dialog.
+  3. A warning may appear stating that the application cannot be opened because it is from an unidentified developer. This is expected. Click "Done" to close the dialog. 
+  4. Go to "System Setting" on your Mac computer, on the left pannel, scroll down and click "Privacy & Security". 
+  5. Go to the right side panel of "Privacy & Security", scroll to "Security" section, you can see the message that "CS31Preview was blocked to protect your Mac", then click "Open Anyway". This is a one-time action, once you clicked "Open Anyway" you do not need to repeat the same action every time you open "CS31Preview" application after this.
+  6. On the pop-up window, click "Open Anyway" again, and enter your password for your Mac computer.
+  7. Then the "CS31Preview" will be opened automatically, you can double-click this icon next time to directly open the app, without going through the above steps again.
 
 After this first approval, double-click launch should work normally.
 
