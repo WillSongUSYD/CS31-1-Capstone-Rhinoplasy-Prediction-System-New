@@ -313,9 +313,26 @@ def build_inference_pipeline(
         solver_order=2,
     )
 
-    # Load LoRA weights. diffusers >= 0.25 supports loading BOTH UNet and
-    # text-encoder adapter keys from a single pytorch_lora_weights.safetensors.
-    pipe.load_lora_weights(str(lora_dir))
+    # Load LoRA weights — UNet keys only.
+    #
+    # The text encoder adapter was saved with the `lora_linear_layer.down/up`
+    # naming from an older diffusers build.  Newer diffusers' get_peft_kwargs()
+    # expects `lora_A/lora_B` naming; when it can't find those keys, rank_dict
+    # stays empty and list(rank_dict.values())[0] raises IndexError.
+    #
+    # The UNet LoRA uses kohya-style `lora.down/up` naming, which the bundled
+    # diffusers handles correctly.  When the text_encoder slice of the state
+    # dict is absent, _load_lora_into_text_encoder's early-exit guard
+    # (`if len(state_dict) > 0`) skips loading cleanly.
+    _lora_file = Path(lora_dir) / "pytorch_lora_weights.safetensors"
+    if not _lora_file.exists():
+        raise FileNotFoundError(f"LoRA weights not found at {_lora_file}")
+    from safetensors.torch import load_file as _load_safetensors
+    _full_sd = _load_safetensors(str(_lora_file))
+    _unet_sd = {k: v for k, v in _full_sd.items() if k.startswith("unet.")}
+    if not _unet_sd:
+        raise ValueError(f"No UNet LoRA keys found in {_lora_file}")
+    pipe.load_lora_weights(_unet_sd)
 
     # Optional: fuse LoRA into base weights for ~5% inference speedup.
     # Disabled by default - keeps the pipeline reloadable with different
