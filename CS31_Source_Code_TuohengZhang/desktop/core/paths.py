@@ -42,7 +42,7 @@ def bundle_root() -> Path:
     """
     if _is_frozen():
         # py2app copies the entire ``desktop`` package into Resources.
-        # sys.executable → <App>.app/Contents/MacOS/CS31Preview
+        # sys.executable → <App>.app/Contents/MacOS/CS31-1-Rhinoplasty-Prediction-Studio
         app_root = Path(sys.executable).resolve().parent.parent
         return app_root / "Resources" / "desktop"
     return Path(__file__).resolve().parents[1]

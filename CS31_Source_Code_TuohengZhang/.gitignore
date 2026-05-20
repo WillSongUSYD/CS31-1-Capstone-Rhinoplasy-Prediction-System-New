@@ -131,8 +131,8 @@ desktop/build/
 desktop/dist/
 # py2app runs setup.py from repo root; build/ + dist/ land there too
 build/
-dist/CS31Preview.app/
-dist/CS31Preview.zip
+dist/CS31-1-Rhinoplasty-Prediction-Studio.app/
+dist/CS31-1-Rhinoplasty-Prediction-Studio.zip
 # py2app intermediate + bundled LoRA copy at build time
 desktop/bundled_models/lora/*.safetensors
 desktop/bundled_models/insightface/models/

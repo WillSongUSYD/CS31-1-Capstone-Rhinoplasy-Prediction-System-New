@@ -1,11 +1,11 @@
-"""py2app configuration for CS31Preview.
+"""py2app configuration for CS31-1-Rhinoplasty-Prediction-Studio.
 
 Build from the project root:
 
     cd /Applications/CS31
     python desktop/setup.py py2app --arch arm64
 
-Produces ``dist/CS31Preview.app``. Size:
+Produces ``dist/CS31-1-Rhinoplasty-Prediction-Studio.app``. Size:
   * ~400 MB python + torch shared libs + PyQt6
   * +25 MB bundled V6 LoRA
   * +4 MB MediaPipe face_landmarker

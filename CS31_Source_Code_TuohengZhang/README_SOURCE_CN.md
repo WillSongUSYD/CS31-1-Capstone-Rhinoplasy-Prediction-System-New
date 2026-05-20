@@ -29,4 +29,4 @@ python -m desktop
 
 ## 重要说明
 
-这个源码包不包含原始患者图片、虚拟环境、node_modules、训练缓存和 4GB Stable Diffusion 基础模型。最终可展示 App 在交接包根目录的 `CS31Preview_MacApp.zip` 里。
+这个源码包不包含原始患者图片、虚拟环境、node_modules、训练缓存和 4GB Stable Diffusion 基础模型。最终可展示 App 在交接包根目录的 `CS31-1-Rhinoplasty-Prediction-Studio_MacApp.zip` 里。

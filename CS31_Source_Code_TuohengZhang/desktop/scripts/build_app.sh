@@ -1,12 +1,12 @@
 #!/bin/bash
-# Build script for CS31Preview.app
+# Build script for CS31-1-Rhinoplasty-Prediction-Studio.app
 # Run from the repo root.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-echo "== CS31Preview build =="
+echo "== CS31-1-Rhinoplasty-Prediction-Studio build =="
 echo "repo: $REPO_ROOT"
 
 # 1. Verify the V6 LoRA is on disk (py2app will copy it into the bundle).
@@ -39,7 +39,7 @@ echo "== py2app build =="
 # manifests as 'operator torchvision::nms does not exist' at runtime.
 # Inject a relative rpath so they find libc10.dylib inside our bundle.
 echo "== fix torchvision rpath =="
-VISION_DIR="dist/CS31Preview.app/Contents/Resources/lib/python3.9/torchvision"
+VISION_DIR="dist/CS31-1-Rhinoplasty-Prediction-Studio.app/Contents/Resources/lib/python3.9/torchvision"
 for f in "$VISION_DIR/_C.so" "$VISION_DIR/image.so"; do
     if [ -f "$f" ]; then
         # Idempotent: silently skip if already fixed.
@@ -62,18 +62,18 @@ done
 
 # 5b. Verify the bundle.
 echo "== verify =="
-.venv/bin/python desktop/scripts/verify_bundle.py dist/CS31Preview.app
+.venv/bin/python desktop/scripts/verify_bundle.py dist/CS31-1-Rhinoplasty-Prediction-Studio.app
 
 # 6. Zip for distribution (ditto preserves macOS-specific metadata
 # like code-signing attributes; plain zip strips those).
 echo "== zip =="
-rm -f dist/CS31Preview.zip
-(cd dist && ditto -c -k --sequesterRsrc --keepParent CS31Preview.app CS31Preview.zip)
+rm -f dist/CS31-1-Rhinoplasty-Prediction-Studio.zip
+(cd dist && ditto -c -k --sequesterRsrc --keepParent CS31-1-Rhinoplasty-Prediction-Studio.app CS31-1-Rhinoplasty-Prediction-Studio.zip)
 
 echo
 echo "== done =="
-du -sh dist/CS31Preview.app dist/CS31Preview.zip
+du -sh dist/CS31-1-Rhinoplasty-Prediction-Studio.app dist/CS31-1-Rhinoplasty-Prediction-Studio.zip
 echo
-echo "Distribute dist/CS31Preview.zip."
+echo "Distribute dist/CS31-1-Rhinoplasty-Prediction-Studio.zip."
 echo "On first launch, users must right-click the app → Open → Open"
 echo "to bypass Gatekeeper (unsigned)."

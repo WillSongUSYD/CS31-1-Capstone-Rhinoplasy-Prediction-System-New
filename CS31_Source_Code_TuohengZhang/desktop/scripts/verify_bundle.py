@@ -1,6 +1,6 @@
 """Post-build sanity checks for the produced .app bundle.
 
-Run as ``python desktop/scripts/verify_bundle.py dist/CS31Preview.app``.
+Run as ``python desktop/scripts/verify_bundle.py dist/CS31-1-Rhinoplasty-Prediction-Studio.app``.
 Fails with a non-zero exit code if any required file is missing or
 looks suspicious (e.g. LoRA file is a few bytes long — probably a
 symlink py2app didn't follow).
@@ -17,7 +17,7 @@ from pathlib import Path
 REQUIRED_FILES = [
     # (relative path inside .app, min size in bytes, description)
     ("Contents/Info.plist", 500, "Info.plist"),
-    ("Contents/MacOS/CS31Preview", 1024, "launcher executable"),
+    ("Contents/MacOS/CS31-1-Rhinoplasty-Prediction-Studio", 1024, "launcher executable"),
     (
         "Contents/Resources/desktop/bundled_models/lora/pytorch_lora_weights.safetensors",
         20 * 1024 * 1024,  # ≥20 MB (V6 LoRA is ~25 MB)

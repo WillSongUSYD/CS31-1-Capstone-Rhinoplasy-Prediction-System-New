@@ -1,4 +1,4 @@
-"""CS31Preview entrypoint.
+"""CS31-1-Rhinoplasty-Prediction-Studio entrypoint.
 
 Order matters:
 

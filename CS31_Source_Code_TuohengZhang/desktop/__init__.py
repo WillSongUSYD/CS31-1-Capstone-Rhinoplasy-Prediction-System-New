@@ -1,4 +1,4 @@
-"""CS31Preview desktop wrapper.
+"""CS31-1-Rhinoplasty-Prediction-Studio desktop wrapper.
 
 Thin PyQt6 UI over the existing ``backend.inference_sd`` SD Inpainting +
 LoRA pipeline. No HTTP. No FastAPI. Direct in-process imports.
