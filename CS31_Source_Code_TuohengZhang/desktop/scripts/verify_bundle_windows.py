@@ -25,6 +25,11 @@ REQUIRED_FILES = [
         200,
         "QSS stylesheet",
     ),
+    (
+        "download_sd_model_v3.bat",
+        100,
+        "fallback model downloader",
+    ),
 ]
 
 

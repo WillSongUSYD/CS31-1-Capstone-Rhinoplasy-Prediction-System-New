@@ -63,6 +63,8 @@ a = Analysis(
         ),
         # QSS stylesheet.
         (str(HERE / "assets" / "style.qss"), "desktop/assets"),
+        # Fallback model downloader — users run this if in-app download fails.
+        (str(HERE / "download_sd_model_v3.bat"), "."),
     ] + mp_datas + insightface_datas,
     hiddenimports=[
         # PyTorch lazy submodules.
