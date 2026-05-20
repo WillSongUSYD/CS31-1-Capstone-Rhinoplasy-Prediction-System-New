@@ -29,18 +29,20 @@ APP_NAME = "CS31-1-Rhinoplasty-Prediction-Studio"
 # Collect mediapipe data files (tflite models, etc.) and hidden imports.
 mp_datas, mp_bins, mp_hiddens = collect_all("mediapipe")
 
-# InsightFace buffalo_l is optional at build time (downloads on first launch).
+# InsightFace buffalo_l models — REQUIRED for face detection. The full
+# pack is bundled to match the known-good distribution. The CI workflow
+# and build_windows.bat download buffalo_l before this build runs.
 _insightface_local = Path.home() / ".insightface" / "models" / "buffalo_l"
 insightface_datas = []
-if _insightface_local.is_dir():
+if _insightface_local.is_dir() and any(_insightface_local.glob("*.onnx")):
     insightface_datas = [
         (str(p), "desktop/bundled_models/insightface/models/buffalo_l")
         for p in _insightface_local.glob("*.onnx")
     ]
 else:
     print(
-        "[spec] warning: ~/.insightface/models/buffalo_l not found — "
-        "InsightFace will download on first launch",
+        "[spec] warning: buffalo_l ONNX models not found — the built app "
+        "will FAIL face detection. Run the InsightFace download step first.",
         file=sys.stderr,
     )
 

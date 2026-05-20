@@ -51,6 +51,15 @@ jobs:
         working-directory: CS31_Source_Code_TuohengZhang
         run: pip install insightface onnxruntime
 
+      - name: Download InsightFace buffalo_l detection model
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          # Populates ~/.insightface/models/buffalo_l so the spec can bundle
+          # det_10g.onnx. Without this the built app fails all face detection.
+          python -c "from insightface.utils.storage import ensure_available; print('buffalo_l ->', ensure_available('models', 'buffalo_l'))"
+          python -c "import os; p=os.path.expanduser('~/.insightface/models/buffalo_l/det_10g.onnx'); assert os.path.isfile(p), 'det_10g.onnx missing after download'; print('det_10g.onnx OK:', os.path.getsize(p), 'bytes')"
+
       - name: Install PyQt6 and PyInstaller
         working-directory: CS31_Source_Code_TuohengZhang
         run: pip install PyQt6 pyinstaller

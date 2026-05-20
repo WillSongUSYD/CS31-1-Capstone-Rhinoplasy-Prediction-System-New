@@ -30,6 +30,11 @@ REQUIRED_FILES = [
         200,
         "QSS stylesheet",
     ),
+    (
+        "_internal/desktop/bundled_models/insightface/models/buffalo_l/det_10g.onnx",
+        10 * 1024 * 1024,
+        "InsightFace detection model",
+    ),
 ]
 
 

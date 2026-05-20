@@ -109,7 +109,15 @@ def _get_face_app(det_size: int = 320):
             raise RuntimeError(
                 "insightface is required for nose ROI detection; pip install insightface"
             ) from exc
-        app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+        # InsightFace's FaceAnalysis only consults its `root` argument
+        # (default ~/.insightface) — it does NOT read any environment
+        # variable. The desktop app sets INSIGHTFACE_HOME to the bundled
+        # model location, so honour it explicitly here. Unset (backend /
+        # ML pipeline) falls back to the library default.
+        root = os.environ.get("INSIGHTFACE_HOME") or "~/.insightface"
+        app = FaceAnalysis(
+            name="buffalo_l", root=root, providers=["CPUExecutionProvider"],
+        )
         app.prepare(ctx_id=-1, det_size=(det_size, det_size))
         _app_instances[det_size] = app
         _app_pid = pid

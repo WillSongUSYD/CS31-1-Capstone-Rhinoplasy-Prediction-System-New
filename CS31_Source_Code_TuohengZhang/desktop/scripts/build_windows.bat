@@ -42,6 +42,11 @@ pip install diffusers transformers peft safetensors accelerate "huggingface_hub>
 pip install insightface onnxruntime
 pip install PyQt6 pyinstaller
 
+:: 4b. Download InsightFace buffalo_l detection model (bundled into the app).
+echo Downloading InsightFace buffalo_l detection model ...
+python -c "from insightface.utils.storage import ensure_available; ensure_available('models','buffalo_l')"
+if errorlevel 1 ( echo InsightFace model download FAILED. & pause & exit /b 1 )
+
 :: 5. Clean previous build.
 if exist "%REPO%\dist" rmdir /s /q "%REPO%\dist"
 if exist "%REPO%\build" rmdir /s /q "%REPO%\build"
