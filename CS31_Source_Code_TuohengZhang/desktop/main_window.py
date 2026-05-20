@@ -39,7 +39,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CS31Preview - Rhinoplasty Outcome Studio")
+        self.setWindowTitle("CS31-1-Rhinoplasty-Prediction-Studio")
         self.resize(1180, 760)
 
         self._current_upload: Path | None = None
@@ -63,7 +63,7 @@ class MainWindow(QMainWindow):
         header_layout.setContentsMargins(24, 20, 24, 20)
         header_layout.setSpacing(6)
 
-        eyebrow = QLabel("CS31Preview Consultation Suite", self)
+        eyebrow = QLabel("CS31-1-Rhinoplasty-Prediction-Studio", self)
         eyebrow.setObjectName("HeroEyebrow")
         header_layout.addWidget(eyebrow)
 
