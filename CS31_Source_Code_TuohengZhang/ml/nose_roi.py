@@ -115,10 +115,18 @@ def _get_face_app(det_size: int = 320):
         # model location, so honour it explicitly here. Unset (backend /
         # ML pipeline) falls back to the library default.
         root = os.environ.get("INSIGHTFACE_HOME") or "~/.insightface"
+        logger.info(
+            "InsightFace: loading buffalo_l (det_size=%d) from root=%s",
+            det_size, root,
+        )
         app = FaceAnalysis(
             name="buffalo_l", root=root, providers=["CPUExecutionProvider"],
         )
         app.prepare(ctx_id=-1, det_size=(det_size, det_size))
+        logger.info(
+            "InsightFace ready (det_size=%d): modules=%s",
+            det_size, sorted(app.models.keys()),
+        )
         _app_instances[det_size] = app
         _app_pid = pid
         return app
@@ -157,8 +165,8 @@ def _detect_kps(pil_image: Image.Image) -> Optional[np.ndarray]:
         faces = app.get(bgr)
         if faces and faces[0].kps is not None and len(faces[0].kps) >= 3:
             return faces[0].kps
-    except Exception as exc:
-        logger.debug("InsightFace fast pass failed: %s", exc)
+    except Exception:
+        logger.warning("InsightFace fast pass (det_size=320) failed", exc_info=True)
 
     # Pass 2: bigger detector input (640) + CLAHE contrast boost. This
     # instance is cached separately from pass 1 so the prepare() call
@@ -168,8 +176,8 @@ def _detect_kps(pil_image: Image.Image) -> Optional[np.ndarray]:
         faces = app.get(_apply_clahe(bgr))
         if faces and faces[0].kps is not None and len(faces[0].kps) >= 3:
             return faces[0].kps
-    except Exception as exc:
-        logger.debug("InsightFace CLAHE pass failed: %s", exc)
+    except Exception:
+        logger.warning("InsightFace CLAHE pass (det_size=640) failed", exc_info=True)
     return None
 
 

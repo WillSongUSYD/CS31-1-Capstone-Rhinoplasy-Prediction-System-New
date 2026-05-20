@@ -6,11 +6,18 @@ Build from CS31_Source_Code_TuohengZhang/:
     pyinstaller desktop/CS31_windows.spec
 
 Produces dist/CS31-1-Rhinoplasty-Prediction-Studio/ directory.
-Zip it for distribution (7-Zip or Windows built-in).
 
 First-launch behaviour is the same as macOS: the app shows an onboarding
 dialog and downloads the ~4 GB SD 1.5 Inpainting base model from
-huggingface.co. The V6 LoRA (25 MB) is bundled inside the distribution.
+huggingface.co. The V6 LoRA and the InsightFace buffalo_l models are
+bundled inside the distribution.
+
+Collection strategy: third-party packages are pulled in with collect_all()
+rather than relying on PyInstaller's static analysis. Packages with dynamic
+imports or native DLLs — notably insightface (dynamic model_zoo imports)
+and onnxruntime — are under-collected by static analysis, which silently
+breaks face detection at runtime. This list mirrors the known-good
+CS31Preview_windows.spec recipe.
 """
 # noqa: F821 -- Analysis, PYZ, EXE, COLLECT are injected by PyInstaller
 from __future__ import annotations
@@ -18,7 +25,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_all, collect_data_files
+from PyInstaller.utils.hooks import collect_all
 
 SPECPATH = Path(SPECPATH)  # type: ignore[name-defined]  # noqa: F821
 HERE = SPECPATH          # desktop/
@@ -26,8 +33,44 @@ REPO = HERE.parent       # CS31_Source_Code_TuohengZhang/
 
 APP_NAME = "CS31-1-Rhinoplasty-Prediction-Studio"
 
-# Collect mediapipe data files (tflite models, etc.) and hidden imports.
-mp_datas, mp_bins, mp_hiddens = collect_all("mediapipe")
+# Fully collect third-party packages (submodules + data files + native
+# binaries). Mirrors the known-good CS31Preview_windows.spec.
+_pkg_datas = []
+_pkg_binaries = []
+_pkg_hiddenimports = []
+for _pkg in [
+    "torch",
+    "torchvision",
+    "diffusers",
+    "transformers",
+    "peft",
+    "safetensors",
+    "insightface",
+    "onnxruntime",
+    "cv2",
+    "PIL",
+    "numpy",
+    "huggingface_hub",
+    "tokenizers",
+    "sklearn",
+    "requests",
+    "urllib3",
+    "certifi",
+    "charset_normalizer",
+    "idna",
+    "filelock",
+    "packaging",
+    "yaml",
+    "regex",
+    "tqdm",
+    "fsspec",
+    "typing_extensions",
+    "PyQt6",
+]:
+    _d, _b, _h = collect_all(_pkg)
+    _pkg_datas += _d
+    _pkg_binaries += _b
+    _pkg_hiddenimports += _h
 
 # InsightFace buffalo_l models — REQUIRED for face detection. The full
 # pack is bundled to match the known-good distribution. The CI workflow
@@ -49,7 +92,7 @@ else:
 a = Analysis(
     [str(HERE / "app.py")],
     pathex=[str(REPO)],
-    binaries=mp_bins,
+    binaries=_pkg_binaries,
     datas=[
         # V6 LoRA (required for inference).
         (
@@ -65,27 +108,13 @@ a = Analysis(
         ),
         # QSS stylesheet.
         (str(HERE / "assets" / "style.qss"), "desktop/assets"),
-    ] + mp_datas + insightface_datas,
+    ] + insightface_datas + _pkg_datas,
     hiddenimports=[
-        # PyTorch lazy submodules.
-        "torch._C", "torch.utils", "torch.nn", "torch.nn.functional",
-        "torch.backends.mps",
-        # Hugging Face ecosystem.
-        "diffusers", "transformers", "peft", "safetensors", "accelerate",
-        "huggingface_hub", "huggingface_hub.file_download",
-        "huggingface_hub.snapshot_download", "tokenizers",
-        # Networking.
-        "requests", "urllib3", "certifi", "charset_normalizer", "idna",
-        # File / packaging helpers.
-        "filelock", "packaging", "regex", "tqdm", "fsspec", "yaml",
-        "typing_extensions", "importlib_metadata",
-        # ML deps.
-        "sklearn", "sklearn.utils", "sklearn.neighbors", "cv2", "onnxruntime",
-        # Our packages.
-        "backend", "backend.inference", "backend.inference_sd",
-        "backend.db",
+        # The app's own packages. PyInstaller picks most up from app.py,
+        # but list the deferred / string-imported ones explicitly.
+        "backend", "backend.inference", "backend.inference_sd", "backend.db",
         "ml", "ml.config", "ml.nose_roi", "ml.landmarks",
-        "ml.description", "ml.runtime",
+        "ml.description", "ml.runtime", "ml.models.sd_inpaint",
         "desktop", "desktop.core", "desktop.core.config",
         "desktop.core.paths", "desktop.core.downloader",
         "desktop.core.inference_worker", "desktop.core.image_geometry",
@@ -94,13 +123,11 @@ a = Analysis(
         "desktop.widgets.busy_overlay", "desktop.widgets.drop_zone",
         "desktop.widgets.onboarding_dialog",
         "desktop.widgets.validation_report",
-        "ml.models.sd_inpaint",
-        # Qt.
-        "PyQt6.QtCore", "PyQt6.QtGui", "PyQt6.QtWidgets",
-        "PyQt6.QtNetwork",
-        # Standard library items py2app includes explicitly.
+        # accelerate is imported lazily by diffusers.
+        "accelerate",
+        # Standard library items PyInstaller sometimes misses.
         "sqlite3", "queue", "concurrent.futures",
-    ] + mp_hiddens,
+    ] + _pkg_hiddenimports,
     hookspath=[],
     runtime_hooks=[],
     excludes=[

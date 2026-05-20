@@ -17,6 +17,7 @@ problem at once instead of fixing one, retrying, finding the next.
 """
 from __future__ import annotations
 
+import logging
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,8 @@ from typing import Optional
 import cv2
 import numpy as np
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -173,8 +176,11 @@ def _detect_faces_and_kps(pil: Image.Image) -> tuple[int, Optional[np.ndarray]]:
         detections = app.get(bgr) or []
         face_count = len(detections)
     except Exception:  # pragma: no cover — InsightFace init failures
+        logger.warning("InsightFace face-count detection failed", exc_info=True)
         face_count = 1 if kps is not None else 0
 
+    logger.info("validation face detection: face_count=%d kps=%s",
+                face_count, kps is not None)
     return face_count, kps
 
 
