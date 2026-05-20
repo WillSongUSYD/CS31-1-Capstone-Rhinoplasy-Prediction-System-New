@@ -14,21 +14,21 @@ APP_NAME = "CS31-1-Rhinoplasty-Prediction-Studio"
 
 REQUIRED_FILES = [
     # (relative path inside dist folder, min size in bytes, description)
+    # Top-level user-facing files.
     (f"{APP_NAME}.exe", 1024, "launcher executable"),
+    ("download_sd_model_v3.bat", 100, "fallback model downloader"),
+    ("README.txt", 50, "user README"),
+    ("FIRST_LAUNCH.txt", 50, "first-launch guide"),
+    # Bundled resources live under _internal/ (PyInstaller contents directory).
     (
-        f"desktop/bundled_models/lora/pytorch_lora_weights.safetensors",
+        "_internal/desktop/bundled_models/lora/pytorch_lora_weights.safetensors",
         20 * 1024 * 1024,
         "V6 LoRA weights",
     ),
     (
-        "desktop/assets/style.qss",
+        "_internal/desktop/assets/style.qss",
         200,
         "QSS stylesheet",
-    ),
-    (
-        "download_sd_model_v3.bat",
-        100,
-        "fallback model downloader",
     ),
 ]
 

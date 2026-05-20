@@ -63,8 +63,6 @@ a = Analysis(
         ),
         # QSS stylesheet.
         (str(HERE / "assets" / "style.qss"), "desktop/assets"),
-        # Fallback model downloader — users run this if in-app download fails.
-        (str(HERE / "download_sd_model_v3.bat"), "."),
     ] + mp_datas + insightface_datas,
     hiddenimports=[
         # PyTorch lazy submodules.
@@ -136,9 +134,10 @@ exe = EXE(  # type: ignore[name-defined]  # noqa: F821
     codesign_identity=None,
     entitlements_file=None,
     # icon="desktop/assets/icon.ico",  # Add a .ico file to assets/ to enable.
-    # PyInstaller 6.x default puts everything under _internal/; "." restores
-    # the flat layout so bundled assets are at predictable relative paths.
-    contents_directory=".",
+    # Keep all support files (DLLs, Python runtime, bundled data) inside an
+    # _internal/ folder so the distribution's top level stays clean: only the
+    # exe plus the workflow-added README / FIRST_LAUNCH / downloader bat.
+    contents_directory="_internal",
 )
 
 coll = COLLECT(  # type: ignore[name-defined]  # noqa: F821

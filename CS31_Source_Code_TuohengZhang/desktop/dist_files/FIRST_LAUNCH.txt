@@ -1,0 +1,46 @@
+FIRST LAUNCH - IMPORTANT
+========================
+
+The first time you open CS31-1-Rhinoplasty-Prediction-Studio it must
+download a ~4 GB AI model (Stable Diffusion 1.5 Inpainting). This
+happens only once. Every launch after that starts instantly.
+
+
+NORMAL FIRST LAUNCH
+-------------------
+1. Make sure you have a stable internet connection.
+2. Double-click  CS31-1-Rhinoplasty-Prediction-Studio.exe
+3. An onboarding window appears and starts the download.
+4. Keep the window open until it finishes. This takes about 10-30
+   minutes depending on your connection. Do NOT close it.
+5. When the download completes the app is ready to use.
+
+The model is saved to:
+  %APPDATA%\CS31-1-Rhinoplasty-Prediction-Studio\models\sd_base\inpaint\
+
+
+IF THE IN-APP DOWNLOAD FAILS
+----------------------------
+If the download stalls or errors, or the app reports that the model is
+missing, use the backup downloader:
+
+1. Close the app.
+2. Double-click  download_sd_model_v3.bat  (in this folder).
+3. A command window opens. It will:
+     - find or install a compatible Python (3.9 - 3.13),
+     - create a small isolated environment,
+     - download the model directly from huggingface.co.
+4. Keep the command window open. It may look frozen for up to 60
+   seconds while it starts - this is normal. Progress bars appear
+   once the download begins.
+5. When it prints "Download complete", close the window and launch
+   CS31-1-Rhinoplasty-Prediction-Studio.exe again.
+
+The backup downloader saves to the same location the app expects, so
+once it finishes the app finds the model automatically.
+
+
+NEED HELP?
+----------
+Check the log file for error details:
+  %APPDATA%\CS31-1-Rhinoplasty-Prediction-Studio\cs31-rhinoplasty-prediction-studio.log

@@ -52,12 +52,19 @@ cd /d "%REPO%"
 python -m PyInstaller desktop\CS31_windows.spec
 if errorlevel 1 ( echo BUILD FAILED. & pause & exit /b 1 )
 
-:: 7. Verify.
+:: 7. Assemble distribution files.
+echo == Assembling distribution files ==
+set "DIST=dist\CS31-1-Rhinoplasty-Prediction-Studio"
+copy /y "desktop\download_sd_model_v3.bat" "%DIST%\" >nul
+copy /y "desktop\dist_files\README.txt" "%DIST%\" >nul
+copy /y "desktop\dist_files\FIRST_LAUNCH.txt" "%DIST%\" >nul
+
+:: 8. Verify.
 echo == Verifying bundle ==
 python desktop\scripts\verify_bundle_windows.py "dist\CS31-1-Rhinoplasty-Prediction-Studio"
 if errorlevel 1 ( echo VERIFY FAILED. & pause & exit /b 1 )
 
-:: 8. Zip.
+:: 9. Zip.
 echo == Zipping ==
 set "OUTDIR=dist\CS31-1-Rhinoplasty-Prediction-Studio"
 set "ZIPNAME=dist\CS31-1-Rhinoplasty-Prediction-Studio-Windows.zip"
