@@ -1,13 +1,13 @@
 @echo off
 setlocal
-title CS31Preview - Setup and Download
+title CS31-1-Rhinoplasty-Prediction-Studio - Setup and Download
 
-set "MODEL_DIR=%APPDATA%\CS31Preview\models\sd_base\inpaint"
-set "VENV_DIR=%APPDATA%\CS31Preview\download_env"
+set "MODEL_DIR=%APPDATA%\CS31-1-Rhinoplasty-Prediction-Studio\models\sd_base\inpaint"
+set "VENV_DIR=%APPDATA%\CS31-1-Rhinoplasty-Prediction-Studio\download_env"
 set PYTHON=
 
-echo CS31Preview - Setup and Download
-echo ==================================
+echo CS31-1-Rhinoplasty-Prediction-Studio - Setup and Download
+echo ================================================
 echo.
 
 :: ── 1. Check if model already installed ──────────────────────────────────────
@@ -122,7 +122,7 @@ python -u -c "import os, sys; os.environ['HF_ENDPOINT']='https://huggingface.co'
 if %ERRORLEVEL% equ 0 (
     echo.
     echo ====================================
-    echo Download complete^^! You can now launch CS31Preview.exe.
+    echo Download complete^^! You can now launch CS31-1-Rhinoplasty-Prediction-Studio.
     echo Model saved to:
     echo   %MODEL_DIR%
 ) else (
@@ -139,7 +139,7 @@ goto :end
 echo Model already installed at:
 echo   %MODEL_DIR%
 echo.
-echo Nothing to do. You can launch CS31Preview.exe now.
+echo Nothing to do. You can launch CS31-1-Rhinoplasty-Prediction-Studio now.
 
 :end
 echo.

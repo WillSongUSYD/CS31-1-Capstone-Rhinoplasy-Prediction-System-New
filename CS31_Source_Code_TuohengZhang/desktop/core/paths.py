@@ -2,7 +2,7 @@
 
 macOS app bundles are READ-ONLY once signed/installed. Any file the app
 needs to write (downloaded SD base model, generated result images, config
-cache) must go to ``~/Library/Application Support/CS31Preview/``.
+cache) must go to ``~/Library/Application Support/CS31-1-Rhinoplasty-Prediction-Studio/``.
 
 This module exposes two families:
 
@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 
-_APP_NAME = "CS31Preview"
+_APP_NAME = "CS31-1-Rhinoplasty-Prediction-Studio"
 
 
 def _is_frozen() -> bool:
@@ -71,8 +71,8 @@ def bundle_face_landmarker() -> Path:
 def user_support_dir() -> Path:
     """Platform-appropriate writable app-data directory. Created on first access.
 
-    - Windows: ``%APPDATA%\\CS31Preview\\``
-    - macOS:   ``~/Library/Application Support/CS31Preview/``
+    - Windows: ``%APPDATA%\\CS31-1-Rhinoplasty-Prediction-Studio\\``
+    - macOS:   ``~/Library/Application Support/CS31-1-Rhinoplasty-Prediction-Studio/``
     """
     if platform.system() == "Windows":
         appdata = os.environ.get("APPDATA")
@@ -111,7 +111,7 @@ def user_config_path() -> Path:
 def user_output_dir() -> Path:
     """Where the Save button writes generated post-op images.
 
-    ``~/Pictures/CS31Preview/`` is a more discoverable default than the
+    ``~/Pictures/CS31-1-Rhinoplasty-Prediction-Studio/`` is a more discoverable default than the
     app's Application Support dir for user-facing outputs.
     """
     d = Path.home() / "Pictures" / _APP_NAME

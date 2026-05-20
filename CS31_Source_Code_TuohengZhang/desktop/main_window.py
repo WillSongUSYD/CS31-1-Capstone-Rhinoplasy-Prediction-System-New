@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CS31Preview - Rhinoplasty Outcome Prediction")
+        self.setWindowTitle("CS31-1-Rhinoplasty-Prediction-Studio")
         self.resize(1020, 720)
 
         self._current_upload: Path | None = None

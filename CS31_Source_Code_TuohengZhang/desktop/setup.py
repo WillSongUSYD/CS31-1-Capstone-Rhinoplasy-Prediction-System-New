@@ -197,8 +197,8 @@ PY2APP_OPTIONS = {
     "plist": {
         "LSMinimumSystemVersion": "12.0",
         "CFBundleIdentifier": "com.cs31.preview",
-        "CFBundleName": "CS31Preview",
-        "CFBundleDisplayName": "CS31Preview",
+        "CFBundleName": "CS31-1-Rhinoplasty-Prediction-Studio",
+        "CFBundleDisplayName": "CS31-1-Rhinoplasty-Prediction-Studio",
         "CFBundleShortVersionString": "0.1.0",
         "CFBundleVersion": "0.1.0",
         # Allows camera / photos access if we ever want to pick from

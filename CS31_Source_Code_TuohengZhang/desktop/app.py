@@ -67,8 +67,8 @@ def main() -> int:
     _setup_logging()
 
     app = QApplication(sys.argv)
-    app.setApplicationName("CS31Preview")
-    app.setApplicationDisplayName("CS31Preview")
+    app.setApplicationName("CS31-1-Rhinoplasty-Prediction-Studio")
+    app.setApplicationDisplayName("CS31-1-Rhinoplasty-Prediction-Studio")
     app.setOrganizationName("CS31")
 
     # Optional icon (Phase 5 will ship a real .icns).
