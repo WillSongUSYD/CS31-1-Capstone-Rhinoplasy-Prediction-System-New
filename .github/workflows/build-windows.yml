@@ -6,6 +6,9 @@ on:
     tags:
       - 'v*'           # Also trigger on version tags (e.g. v1.0.0).
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: windows-latest
