@@ -6,21 +6,18 @@ on:
     tags:
       - 'v*'           # Also trigger on version tags (e.g. v1.0.0).
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
       - name: Checkout (with LFS for LoRA weights)
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           lfs: true
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -77,7 +74,7 @@ jobs:
           Write-Host ("ZIP size: {0:N0} MB" -f $size)
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: CS31-Windows-${{ github.run_number }}
           path: CS31_Source_Code_TuohengZhang/dist/CS31-1-Rhinoplasty-Prediction-Studio-Windows.zip
