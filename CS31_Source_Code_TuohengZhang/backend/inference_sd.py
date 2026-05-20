@@ -76,6 +76,16 @@ def load_sd_pipeline(
         raise FileNotFoundError(f"LoRA adapter not found at {lora_dir}")
 
     device = device or _get_device()
+    # float16 has no native CPU compute path — every op is emulated by
+    # up-casting to float32, computing, then down-casting, which makes CPU
+    # inference dramatically slower than plain float32. float16 only pays
+    # off on CUDA. Force float32 whenever we run on CPU (Windows / Intel
+    # Mac), so a prediction takes minutes rather than tens of minutes.
+    if device.type == "cpu" and dtype == torch.float16:
+        logger.info(
+            "CPU device — using float32 (float16 inference is far slower on CPU)"
+        )
+        dtype = torch.float32
     key = (str(base_dir), str(lora_dir), str(device))
 
     with _sd_cache_lock:
