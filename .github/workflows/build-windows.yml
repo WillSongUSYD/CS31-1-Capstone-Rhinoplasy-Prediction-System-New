@@ -55,9 +55,45 @@ jobs:
         working-directory: CS31_Source_Code_TuohengZhang
         run: pip install PyQt6 pyinstaller
 
+      - name: Verify source files exist before build
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          $lora = "models\outcome_v3_512\sd_inpaint_nose_v6\step_10000\pytorch_lora_weights.safetensors"
+          $qss  = "desktop\assets\style.qss"
+          $ok = $true
+          if (Test-Path $lora) {
+            $sz = (Get-Item $lora).Length
+            Write-Host "LoRA OK: $sz bytes"
+          } else {
+            Write-Host "ERROR: LoRA not found at $lora"
+            $ok = $false
+          }
+          if (Test-Path $qss) {
+            Write-Host "QSS OK"
+          } else {
+            Write-Host "ERROR: QSS not found at $qss"
+            $ok = $false
+          }
+          if (-not $ok) { exit 1 }
+
       - name: Build with PyInstaller
         working-directory: CS31_Source_Code_TuohengZhang
         run: pyinstaller desktop/CS31_windows.spec
+
+      - name: List bundle data files (diagnostic)
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          $dist = "dist\CS31-1-Rhinoplasty-Prediction-Studio"
+          Write-Host "=== Top-level dist contents ==="
+          Get-ChildItem $dist | Select-Object Name, Length | Format-Table
+          Write-Host "=== desktop/ subdirectory (if present) ==="
+          if (Test-Path "$dist\desktop") {
+            Get-ChildItem "$dist\desktop" -Recurse | Select-Object FullName, Length | Format-Table
+          } else {
+            Write-Host "No desktop/ subdirectory found in bundle"
+          }
 
       - name: Verify bundle
         working-directory: CS31_Source_Code_TuohengZhang
