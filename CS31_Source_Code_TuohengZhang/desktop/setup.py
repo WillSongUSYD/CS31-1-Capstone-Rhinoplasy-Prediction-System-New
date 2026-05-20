@@ -61,7 +61,8 @@ def _collect_dist_info() -> list[tuple[str, list[str]]]:
     bundle's site-packages. ~500 KB total; cheap insurance against
     future lib tightening.
     """
-    venv_sp = Path(sys.executable).parent.parent / "lib" / "python3.9" / "site-packages"
+    _pyver = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    venv_sp = Path(sys.executable).parent.parent / "lib" / _pyver / "site-packages"
     if not venv_sp.exists():
         # Fallback for cases where sys.executable is the driving python
         # rather than venv (e.g. CI). Best-effort.
@@ -74,9 +75,8 @@ def _collect_dist_info() -> list[tuple[str, list[str]]]:
 
     pairs: list[tuple[str, list[str]]] = []
     for dinfo in venv_sp.glob("*.dist-info"):
-        # Each dist-info is its own destination subdir under the bundle's
-        # site-packages (``Contents/Resources/lib/python3.9/<name>``).
-        dest_rel = f"lib/python3.9/{dinfo.name}"
+        # Each dist-info is its own destination subdir under the bundle's site-packages.
+        dest_rel = f"lib/{_pyver}/{dinfo.name}"
         files = [str(p) for p in dinfo.iterdir() if p.is_file()]
         if files:
             pairs.append((dest_rel, files))

@@ -48,8 +48,8 @@ class OnboardingDialog(QDialog):
         body = QLabel(
             "The file is about 4 GB. This is a one-time download; "
             "future launches will use the local copy.\n"
-            "By default, the app uses the hf-mirror.com mirror, "
-            "which usually finishes in 5-10 minutes.",
+            "The model is downloaded directly from huggingface.co, "
+            "which usually finishes in 10-30 minutes.",
             self,
         )
         body.setObjectName("OnboardingBody")

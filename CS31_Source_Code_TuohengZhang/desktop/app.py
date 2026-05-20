@@ -39,7 +39,7 @@ def _setup_logging() -> None:
     users can email it to us for debugging without needing Terminal access.
     """
     from desktop.core.paths import user_support_dir
-    log_file = user_support_dir() / "cs31preview.log"
+    log_file = user_support_dir() / "cs31-rhinoplasty-prediction-studio.log"
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s | %(message)s",

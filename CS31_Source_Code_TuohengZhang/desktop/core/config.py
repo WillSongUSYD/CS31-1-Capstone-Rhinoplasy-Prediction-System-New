@@ -46,10 +46,7 @@ def install_environment() -> None:
     # bundled copy for offline first-launch to work.
     os.environ.setdefault("INSIGHTFACE_HOME", str(bundle_insightface()))
 
-    # Use hf-mirror for the 4GB base-model download (China-first dataset;
-    # user's docs confirm 5+ MB/s from this mirror). Downstream code just
-    # reads this via huggingface_hub.
-    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    os.environ.setdefault("HF_ENDPOINT", "https://huggingface.co")
 
     logger.info(
         "env: SD_BASE=%s LORA=%s PREDICTIONS=%s INSIGHTFACE=%s HF=%s",

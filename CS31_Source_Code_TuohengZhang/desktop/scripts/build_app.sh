@@ -39,7 +39,8 @@ echo "== py2app build =="
 # manifests as 'operator torchvision::nms does not exist' at runtime.
 # Inject a relative rpath so they find libc10.dylib inside our bundle.
 echo "== fix torchvision rpath =="
-VISION_DIR="dist/CS31-1-Rhinoplasty-Prediction-Studio.app/Contents/Resources/lib/python3.9/torchvision"
+PYVER=$(.venv/bin/python -c "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')")
+VISION_DIR="dist/CS31-1-Rhinoplasty-Prediction-Studio.app/Contents/Resources/lib/${PYVER}/torchvision"
 for f in "$VISION_DIR/_C.so" "$VISION_DIR/image.so"; do
     if [ -f "$f" ]; then
         # Idempotent: silently skip if already fixed.
