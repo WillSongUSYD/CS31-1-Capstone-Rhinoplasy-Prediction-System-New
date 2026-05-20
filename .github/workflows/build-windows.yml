@@ -1,0 +1,78 @@
+name: Build Windows App
+
+on:
+  workflow_dispatch:   # Trigger manually from the GitHub Actions tab.
+  push:
+    tags:
+      - 'v*'           # Also trigger on version tags (e.g. v1.0.0).
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout (with LFS for LoRA weights)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Upgrade pip
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: python -m pip install --upgrade pip wheel
+
+      - name: Install PyTorch (CPU, Windows ARM64-compatible)
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: |
+          pip install torch==2.6.0 torchvision==0.21.0 `
+            --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install main dependencies
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: |
+          pip install `
+            fastapi==0.115.12 uvicorn==0.34.0 pydantic==2.11.1 `
+            python-multipart==0.0.20 jinja2==3.1.6 `
+            pandas==2.2.3 Pillow==11.1.0 ImageHash==4.3.1 `
+            scikit-image==0.24.0 matplotlib==3.9.4 tqdm==4.67.1 `
+            lpips==0.1.4 mediapipe scikit-learn
+
+      - name: Install Hugging Face / diffusion stack
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: |
+          pip install diffusers transformers peft safetensors accelerate
+          pip install "huggingface_hub>=1.5.0"
+
+      - name: Install InsightFace and ONNX runtime
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: pip install insightface onnxruntime
+
+      - name: Install PyQt6 and PyInstaller
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: pip install PyQt6 pyinstaller
+
+      - name: Build with PyInstaller
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: pyinstaller desktop/CS31_windows.spec
+
+      - name: Create distribution ZIP
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          $src  = "dist\CS31-1-Rhinoplasty-Prediction-Studio"
+          $dest = "dist\CS31-1-Rhinoplasty-Prediction-Studio-Windows.zip"
+          Compress-Archive -Path $src -DestinationPath $dest -CompressionLevel Optimal
+          $size = (Get-Item $dest).Length / 1MB
+          Write-Host ("ZIP size: {0:N0} MB" -f $size)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CS31-Windows-${{ github.run_number }}
+          path: CS31_Source_Code_TuohengZhang/dist/CS31-1-Rhinoplasty-Prediction-Studio-Windows.zip
+          retention-days: 30
+          compression-level: 0   # Already zipped; skip double-compression.

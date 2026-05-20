@@ -85,6 +85,8 @@ models/outcome/
 models/outcome_v1_backup/
 models/outcome_v2_128_backup/
 models/outcome_v2_512_bad/
+# V6 LoRA (pytorch_lora_weights.safetensors) is force-tracked via Git LFS
+# despite this ignore rule — all other checkpoints remain excluded.
 models/outcome_v3_512/
 models/sd_base/
 models/face_landmarker.task

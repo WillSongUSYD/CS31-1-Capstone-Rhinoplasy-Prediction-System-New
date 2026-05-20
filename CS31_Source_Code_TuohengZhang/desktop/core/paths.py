@@ -38,10 +38,14 @@ def bundle_root() -> Path:
     """Root of bundled read-only resources.
 
     Source-tree layout: ``<repo>/desktop/``
-    Frozen bundle: ``<App>.app/Contents/Resources/desktop/``
+    py2app (macOS): ``<App>.app/Contents/Resources/desktop/``
+    PyInstaller (Windows): ``<dist>/_internal/desktop/`` via sys._MEIPASS
     """
     if _is_frozen():
-        # py2app copies the entire ``desktop`` package into Resources.
+        if hasattr(sys, "_MEIPASS"):
+            # PyInstaller: data files land under sys._MEIPASS.
+            return Path(sys._MEIPASS) / "desktop"
+        # py2app: entire desktop package is under Resources.
         # sys.executable → <App>.app/Contents/MacOS/CS31-1-Rhinoplasty-Prediction-Studio
         app_root = Path(sys.executable).resolve().parent.parent
         return app_root / "Resources" / "desktop"
