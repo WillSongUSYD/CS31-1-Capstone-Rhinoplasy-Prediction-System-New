@@ -79,21 +79,24 @@ if not exist "%VENV_DIR%\Scripts\activate.bat" (
 :: ── 4. Activate venv and install huggingface_hub ─────────────────────────────
 call "%VENV_DIR%\Scripts\activate.bat"
 
-echo Checking huggingface_hub...
+echo Checking huggingface_hub and colorama...
 python -m pip show huggingface-hub >nul 2>&1
 if errorlevel 1 (
-    echo Installing huggingface_hub...
-    python -m pip install "huggingface_hub>=0.19"
+    echo Installing huggingface_hub and colorama...
+    python -m pip install "huggingface_hub>=0.19" colorama
     python -m pip show huggingface-hub >nul 2>&1
     if errorlevel 1 (
         echo.
         echo ERROR: Failed to install huggingface_hub.
         echo Try running this manually to see the full error:
-        echo   python -m pip install huggingface_hub
+        echo   python -m pip install huggingface_hub colorama
         echo.
         pause
         exit /b 1
     )
+) else (
+    python -m pip show colorama >nul 2>&1
+    if errorlevel 1 python -m pip install colorama >nul 2>&1
 )
 echo huggingface_hub OK.
 echo.
@@ -104,9 +107,17 @@ mkdir "%MODEL_DIR%" 2>nul
 echo Saving model to:
 echo   %MODEL_DIR%
 echo.
+echo -----------------------------------------------------------------------
+echo  PLEASE WAIT - the window may appear frozen for up to 60 seconds
+echo  while the download library initialises. Progress bars will appear
+echo  once the connection is established. Do NOT close this window.
+echo -----------------------------------------------------------------------
+echo.
 
 set HF_ENDPOINT=https://huggingface.co
-python -c "import os; os.environ['HF_ENDPOINT']='https://huggingface.co'; from huggingface_hub import snapshot_download; snapshot_download(repo_id='botp/stable-diffusion-v1-5-inpainting', local_dir=r'%MODEL_DIR%', allow_patterns=['model_index.json','unet/*.bin','unet/config.json','vae/*.bin','vae/config.json','text_encoder/*.bin','text_encoder/*.json','tokenizer/*','scheduler/*','feature_extractor/*'])"
+set PYTHONUNBUFFERED=1
+set TQDM_MININTERVAL=0.5
+python -u -c "import os, sys; os.environ['HF_ENDPOINT']='https://huggingface.co'; print('[1/3] Loading download library...', flush=True); import colorama; colorama.init(); from huggingface_hub import snapshot_download; print('[2/3] Resolving file list from HuggingFace (may take ~30s)...', flush=True); snapshot_download(repo_id='botp/stable-diffusion-v1-5-inpainting', local_dir=r'%MODEL_DIR%', allow_patterns=['model_index.json','unet/*.bin','unet/config.json','vae/*.bin','vae/config.json','text_encoder/*.bin','text_encoder/*.json','tokenizer/*','scheduler/*','feature_extractor/*']); print('[3/3] All files saved.', flush=True)"
 
 if %ERRORLEVEL% equ 0 (
     echo.
