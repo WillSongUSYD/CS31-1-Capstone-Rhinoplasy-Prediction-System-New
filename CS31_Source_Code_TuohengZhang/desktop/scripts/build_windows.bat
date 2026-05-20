@@ -52,7 +52,12 @@ cd /d "%REPO%"
 python -m PyInstaller desktop\CS31_windows.spec
 if errorlevel 1 ( echo BUILD FAILED. & pause & exit /b 1 )
 
-:: 7. Zip.
+:: 7. Verify.
+echo == Verifying bundle ==
+python desktop\scripts\verify_bundle_windows.py "dist\CS31-1-Rhinoplasty-Prediction-Studio"
+if errorlevel 1 ( echo VERIFY FAILED. & pause & exit /b 1 )
+
+:: 8. Zip.
 echo == Zipping ==
 set "OUTDIR=dist\CS31-1-Rhinoplasty-Prediction-Studio"
 set "ZIPNAME=dist\CS31-1-Rhinoplasty-Prediction-Studio-Windows.zip"

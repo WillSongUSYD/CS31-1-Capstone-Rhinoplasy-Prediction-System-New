@@ -59,6 +59,10 @@ jobs:
         working-directory: CS31_Source_Code_TuohengZhang
         run: pyinstaller desktop/CS31_windows.spec
 
+      - name: Verify bundle
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: python desktop/scripts/verify_bundle_windows.py dist/CS31-1-Rhinoplasty-Prediction-Studio
+
       - name: Create distribution ZIP
         working-directory: CS31_Source_Code_TuohengZhang
         shell: pwsh
