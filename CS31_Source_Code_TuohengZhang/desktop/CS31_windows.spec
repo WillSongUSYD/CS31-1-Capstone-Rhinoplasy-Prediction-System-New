@@ -136,6 +136,9 @@ exe = EXE(  # type: ignore[name-defined]  # noqa: F821
     codesign_identity=None,
     entitlements_file=None,
     # icon="desktop/assets/icon.ico",  # Add a .ico file to assets/ to enable.
+    # PyInstaller 6.x default puts everything under _internal/; "." restores
+    # the flat layout so bundled assets are at predictable relative paths.
+    contents_directory=".",
 )
 
 coll = COLLECT(  # type: ignore[name-defined]  # noqa: F821
@@ -154,7 +157,4 @@ coll = COLLECT(  # type: ignore[name-defined]  # noqa: F821
         "mkl_*.dll",
     ],
     name=APP_NAME,
-    # PyInstaller 6.x default puts everything under _internal/; "." restores
-    # the flat layout so bundled assets are at predictable relative paths.
-    contents_directory=".",
 )
