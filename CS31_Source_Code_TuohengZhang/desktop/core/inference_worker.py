@@ -16,6 +16,7 @@ Lazy import of the heavy stack:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -53,7 +54,9 @@ class InferenceRequest:
         "a post-rhinoplasty face, refined natural nose, clear skin, photorealistic"
     )
     negative_prompt: str = "blurry, distorted, cartoon, low quality, deformed"
-    num_inference_steps: int = 25
+    # 20 DPM-Solver++ steps balance quality and CPU latency. Lower this
+    # (e.g. 12-15) to trade a little quality for a faster prediction.
+    num_inference_steps: int = 20
     guidance_scale: float = 7.5
     seed: Optional[int] = None  # None = random
     image_size: int = 512
@@ -146,6 +149,7 @@ class InferenceWorker(QThread):
             self.progress.emit(step_index + 1, req.num_inference_steps)
             return callback_kwargs
 
+        _gen_t0 = time.perf_counter()
         result = generate_sd(
             pipeline,
             pre_canvas,
@@ -157,6 +161,10 @@ class InferenceWorker(QThread):
             strength=1.0,
             generator_seed=req.seed,
             image_size=req.image_size,
+        )
+        logger.info(
+            "SD generation finished in %.1fs (%d steps)",
+            time.perf_counter() - _gen_t0, req.num_inference_steps,
         )
         result = restore_from_square_canvas(
             result,

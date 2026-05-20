@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional, Tuple
@@ -96,8 +97,9 @@ def load_sd_pipeline(
     # Release lock while we load (4GB read + move-to-device takes 10+ s).
     # A concurrent request for the same pipeline will load twice; acceptable
     # in practice because SD requests are rare + expensive.
-    logger.info("loading SD inpaint pipeline base=%s lora=%s device=%s",
-                base_dir.name, lora_dir.name, device)
+    logger.info("loading SD inpaint pipeline base=%s lora=%s device=%s dtype=%s",
+                base_dir.name, lora_dir.name, device, dtype)
+    _load_t0 = time.perf_counter()
     from ml.models.sd_inpaint import build_inference_pipeline
     pipe = build_inference_pipeline(base_dir, lora_dir, device=device, dtype=dtype)
     # Enable memory-efficient attention (if xformers is installed). This is
@@ -108,8 +110,16 @@ def load_sd_pipeline(
         # xformers not installed or diffusers version too old - fall back
         # to native SDPA (PyTorch 2.x) which is still fast on Blackwell.
         pass
+    # channels-last memory layout speeds up the conv-heavy UNet/VAE on CPU
+    # (oneDNN) and on GPU. Harmless if the backend doesn't support it.
+    try:
+        pipe.unet = pipe.unet.to(memory_format=torch.channels_last)
+        pipe.vae = pipe.vae.to(memory_format=torch.channels_last)
+    except Exception:  # pragma: no cover
+        pass
     # Disable progress bar for clean logs during serving.
     pipe.set_progress_bar_config(disable=True)
+    logger.info("SD pipeline loaded in %.1fs", time.perf_counter() - _load_t0)
 
     with _sd_cache_lock:
         _sd_cache[key] = pipe
