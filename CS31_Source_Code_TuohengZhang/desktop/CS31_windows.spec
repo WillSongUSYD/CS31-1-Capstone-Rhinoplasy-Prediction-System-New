@@ -154,4 +154,7 @@ coll = COLLECT(  # type: ignore[name-defined]  # noqa: F821
         "mkl_*.dll",
     ],
     name=APP_NAME,
+    # PyInstaller 6.x default puts everything under _internal/; "." restores
+    # the flat layout so bundled assets are at predictable relative paths.
+    contents_directory=".",
 )
