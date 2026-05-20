@@ -9,7 +9,7 @@ from __future__ import annotations
 from PIL import Image
 
 from PyQt6.QtCore import QRect, Qt
-from PyQt6.QtGui import QColor, QImage, QPainter, QPixmap
+from PyQt6.QtGui import QColor, QImage, QPainter, QPen, QPixmap
 from PyQt6.QtWidgets import QSizePolicy, QWidget
 
 
@@ -40,6 +40,11 @@ class BeforeAfterComparison(QWidget):
 
         self._original: QPixmap | None = None
         self._predicted: QPixmap | None = None
+        self._result_mode = False
+
+    def set_result_mode(self, enabled: bool) -> None:
+        self._result_mode = enabled
+        self.update()
 
     def set_images(
         self,
@@ -60,7 +65,7 @@ class BeforeAfterComparison(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         if self._original is None:
-            painter.setPen(QColor("#9ea9b0"))
+            painter.setPen(QColor("#9b8f82"))
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
@@ -75,12 +80,12 @@ class BeforeAfterComparison(QWidget):
 
     def _draw_single_preview(self, painter: QPainter) -> None:
         assert self._original is not None
-        bounds = self.rect().adjusted(24, 52, -24, -24)
-        painter.setPen(QColor("#53606a"))
+        bounds = self.rect().adjusted(30, 64, -30, -30)
+        painter.setPen(QColor("#94744e"))
         painter.drawText(
-            self.rect().adjusted(24, 18, -24, 0),
+            self.rect().adjusted(30, 24, -30, 0),
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
-            "Selected Photo",
+            "Selected Portrait",
         )
         self._draw_pixmap_aspect_fit(painter, self._original, bounds)
 
@@ -88,9 +93,8 @@ class BeforeAfterComparison(QWidget):
         assert self._original is not None
         assert self._predicted is not None
 
-        margin = 22
-        gap = 20
-        label_h = 30
+        margin = 8 if self._result_mode else 20
+        gap = 14 if self._result_mode else 18
         usable_w = max(1, self.width() - margin * 2 - gap)
         panel_w = usable_w // 2
         panel_h = max(1, self.height() - margin * 2)
@@ -114,13 +118,20 @@ class BeforeAfterComparison(QWidget):
         pixmap: QPixmap,
         title_color: str,
     ) -> None:
+        painter.setPen(QPen(QColor("#eadfcc"), 1))
+        painter.setBrush(QColor("#fffdf9"))
+        painter.drawRoundedRect(panel, 18, 18)
+
         painter.setPen(QColor(title_color))
+        title_top = 10 if self._result_mode else 14
+        image_top = 38 if self._result_mode else 54
+        image_pad = 8 if self._result_mode else 18
         painter.drawText(
-            panel.adjusted(0, 0, 0, 0),
+            panel.adjusted(0, title_top, 0, 0),
             Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter,
             title,
         )
-        image_bounds = panel.adjusted(0, 34, 0, 0)
+        image_bounds = panel.adjusted(image_pad, image_top, -image_pad, -image_pad)
         self._draw_pixmap_aspect_fit(painter, pixmap, image_bounds)
 
     @staticmethod
