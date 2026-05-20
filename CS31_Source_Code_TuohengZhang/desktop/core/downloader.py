@@ -1,7 +1,6 @@
 """Background downloader for the SD 1.5 Inpainting base model.
 
-Pulls only the files we actually need from HF (via the ``hf-mirror.com``
-endpoint set in ``config.install_environment``). The full repo has a
+Pulls only the files we actually need from HF. The full repo has a
 redundant single-file ``.ckpt`` and ONNX exports we don't use — a naive
 ``snapshot_download(...)`` would waste ~6 GB of bandwidth. We filter to
 the component-format files matching what the project's training pipeline
@@ -107,7 +106,7 @@ class SDBaseDownloader(QThread):
             # constant may have been cached before install_environment() ran,
             # or where a conflicting value was already in the process env.
             import os
-            os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+            os.environ["HF_ENDPOINT"] = "https://huggingface.co"
             # Fail fast on connection hang (e.g. Windows Firewall silent block)
             # instead of waiting forever. The _on_failed handler will surface
             # the timeout as a retryable error rather than an invisible freeze.
