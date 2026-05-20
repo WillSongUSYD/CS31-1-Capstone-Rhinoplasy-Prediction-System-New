@@ -15,7 +15,18 @@ Python code; lazy loading puts that on the first predict, not launch).
 from __future__ import annotations
 
 import logging
+import os
 import sys
+
+# PyInstaller windowed (console=False) builds on Windows leave sys.stdout
+# and sys.stderr as None. Libraries that write to them — notably tqdm, used
+# by huggingface_hub during the SD base-model download — then crash with
+# "'NoneType' object has no attribute 'write'". Point them at a null sink
+# before anything else imports or runs.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
 
 from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
