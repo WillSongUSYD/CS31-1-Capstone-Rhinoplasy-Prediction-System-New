@@ -24,10 +24,6 @@ from .widgets.validation_report import ValidationReport
 
 logger = logging.getLogger(__name__)
 
-# A prediction running longer than this is treated as stuck and aborted.
-# A normal CPU prediction is a few minutes; 10 min is a generous ceiling.
-INFERENCE_TIMEOUT_MS = 10 * 60 * 1000
-
 
 class MainWindow(QMainWindow):
     """Main window. Single screen flow:
@@ -50,12 +46,6 @@ class MainWindow(QMainWindow):
         self._current_pre: Image.Image | None = None  # loaded for inference
         self._generated: Image.Image | None = None
         self._worker: InferenceWorker | None = None
-
-        # Watchdog that aborts a prediction stuck past INFERENCE_TIMEOUT_MS.
-        self._timed_out = False
-        self._inference_timer = QTimer(self)
-        self._inference_timer.setSingleShot(True)
-        self._inference_timer.timeout.connect(self._on_inference_timeout)
 
         # ----- Central layout -----
         central = QWidget(self)
@@ -315,8 +305,6 @@ class MainWindow(QMainWindow):
         self._worker.progress.connect(self._busy.set_progress)
         self._worker.finished.connect(self._on_inference_finished)
         self._worker.failed.connect(self._on_inference_failed)
-        self._timed_out = False
-        self._inference_timer.start(INFERENCE_TIMEOUT_MS)
         self._worker.start()
 
     def _on_cancel_clicked(self) -> None:
@@ -325,25 +313,7 @@ class MainWindow(QMainWindow):
             self._worker.cancel()
             self._busy._hint.setText("Cancelling ...")  # noqa: SLF001 (internal UI)
 
-    def _on_inference_timeout(self) -> None:
-        """Watchdog fired — the prediction has run past INFERENCE_TIMEOUT_MS.
-
-        Request a cooperative cancel; the diffusers step callback raises
-        InferenceCancelled at the next step, the worker emits failed
-        ("cancelled"), and _on_inference_failed surfaces a timeout message
-        because _timed_out is set.
-        """
-        if self._worker is not None and self._worker.isRunning():
-            logger.warning(
-                "prediction exceeded %d min — aborting",
-                INFERENCE_TIMEOUT_MS // 60000,
-            )
-            self._timed_out = True
-            self._worker.cancel()
-            self._busy._hint.setText("Taking too long — stopping ...")  # noqa: SLF001
-
     def _on_inference_finished(self, pre_pil, gen_pil) -> None:
-        self._inference_timer.stop()
         self._generated = gen_pil
         self._comparison.set_images(pre_pil, gen_pil)
         self._busy.setVisible(False)
@@ -353,7 +323,6 @@ class MainWindow(QMainWindow):
         self._worker = None
 
     def _on_inference_failed(self, reason: str) -> None:
-        self._inference_timer.stop()
         self._busy.setVisible(False)
         self._predict_btn.setText("Retry Prediction")
         self._predict_btn.setVisible(self._current_pre is not None)
@@ -363,20 +332,6 @@ class MainWindow(QMainWindow):
         self._change_btn.setVisible(self._generated is not None)
         self._worker = None
         if reason == "cancelled":
-            if self._timed_out:
-                self._timed_out = False
-                minutes = INFERENCE_TIMEOUT_MS // 60000
-                logger.warning("inference aborted after %d-min timeout", minutes)
-                self._status.showMessage(f"Stopped — prediction exceeded {minutes} minutes")
-                QMessageBox.warning(
-                    self, "Prediction Timed Out",
-                    f"The prediction was stopped because it ran longer than "
-                    f"{minutes} minutes.\n\n"
-                    "This usually means the computer is too slow for CPU-based "
-                    "generation, or another program is using all the CPU. "
-                    "Close other heavy applications and try again.",
-                )
-                return
             self._status.showMessage("Cancelled")
             return
         logger.warning("inference failed: %s", reason)
