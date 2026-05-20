@@ -5,6 +5,17 @@ An AI tool that predicts the post-operative result of rhinoplasty
 (nose surgery) from a single pre-operative side-profile photo.
 
 
+DISK SPACE - PLEASE CHECK FIRST
+-------------------------------
+Make sure you have at least 8 GB of free disk space before you start:
+  - The unzipped application folder is about 2 GB.
+  - The AI model downloaded on first launch needs a further ~4 GB, and
+    it is saved to a separate location (see FILE LOCATIONS below) - that
+    drive must also have enough free space.
+If disk space runs out, the app will fail to download the model or to
+generate predictions.
+
+
 HOW TO START
 ------------
 1. Double-click  CS31-1-Rhinoplasty-Prediction-Studio.exe

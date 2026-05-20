@@ -113,8 +113,22 @@ No programming knowledge is required.
 |---|---|---|
 | Operating system | macOS 12 (Monterey) or newer, **Apple Silicon** (M1/M2/M3/M4) | Windows 10 or 11, 64-bit |
 | Memory (RAM) | 8 GB minimum | 16 GB recommended (8 GB minimum) |
-| Free disk space | ~6 GB (app + downloaded AI model) | ~6 GB (app + downloaded AI model) |
+| Free disk space | **At least 8 GB free** | **At least 8 GB free** |
 | Internet | Required **once**, on first launch, to download the AI model (~4 GB) | Required **once**, on first launch, to download the AI model (~4 GB) |
+
+> **⚠ Disk space — please read.** The application needs a meaningful amount of
+> free disk space. Make sure you have **at least 8 GB free** before you start:
+>
+> - **The unzipped application folder** is about **2 GB** on Windows (the
+>   downloaded `.zip` is smaller — it expands when extracted).
+> - **The AI model** downloaded on first launch needs a further **~4 GB**, and
+>   it is saved to a *separate* location from the application folder (see
+>   [A.7 File Locations](#a7-file-locations)) — that drive/location must also
+>   have enough free space.
+> - Leave headroom for the downloaded `.zip` itself and working space.
+>
+> If either location runs out of space, the app will fail to unzip, fail to
+> download the model, or fail to generate predictions.
 
 ## A.3 Installation
 
@@ -140,9 +154,11 @@ The application is distributed as a compressed `.zip` file, available from the
 
 ### Windows
 
-1. Download the Windows `.zip` and unzip it to any location (for example, your
+1. Before you start, confirm you have **at least 2 GB of free disk space** for
+   the unzipped folder (and a further ~4 GB for the model — see A.4).
+2. Download the Windows `.zip` and unzip it to any location (for example, your
    Desktop).
-2. Open the unzipped folder. It contains:
+3. Open the unzipped folder. It contains:
 
    | Item | Purpose |
    |---|---|
@@ -152,9 +168,9 @@ The application is distributed as a compressed `.zip` file, available from the
    | `FIRST_LAUNCH.txt` | First-launch and download instructions. |
    | `_internal\` | Program files. **Do not delete, move or rename.** |
 
-3. Keep **all** of these items together in the same folder. The application
+4. Keep **all** of these items together in the same folder. The application
    will not start if the `_internal` folder is missing.
-4. Double-click **`CS31-1-Rhinoplasty-Prediction-Studio.exe`** to run.
+5. Double-click **`CS31-1-Rhinoplasty-Prediction-Studio.exe`** to run.
    Windows SmartScreen may show a warning the first time — click
    **More info → Run anyway**.
 
@@ -164,7 +180,12 @@ The first time the application starts, it must download a **~4 GB AI model**
 (Stable Diffusion 1.5 Inpainting). This happens **only once**. Every launch
 afterwards starts immediately.
 
-1. Make sure you have a **stable internet connection**.
+> **⚠ Disk space:** the model needs about **4 GB of free space** at its save
+> location (see [A.7](#a7-file-locations)) — this is *separate* from the
+> application folder. If that drive is low on space the download will fail.
+
+1. Make sure you have a **stable internet connection** and enough free disk
+   space (~4 GB for the model).
 2. Start the application.
 3. An onboarding window appears and begins the download.
 4. **Keep the window open** until the download finishes. This typically takes

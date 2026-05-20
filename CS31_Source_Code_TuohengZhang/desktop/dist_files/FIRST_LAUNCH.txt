@@ -6,9 +6,20 @@ download a ~4 GB AI model (Stable Diffusion 1.5 Inpainting). This
 happens only once. Every launch after that starts instantly.
 
 
+DISK SPACE
+----------
+Before first launch, make sure you have enough free disk space:
+  - ~4 GB for the AI model, saved to:
+    %APPDATA%\CS31-1-Rhinoplasty-Prediction-Studio\models\sd_base\inpaint\
+  - This is SEPARATE from the application folder (which is ~2 GB).
+  - Recommended: keep at least 8 GB free overall.
+If the drive runs low on space the download will fail partway through.
+
+
 NORMAL FIRST LAUNCH
 -------------------
-1. Make sure you have a stable internet connection.
+1. Make sure you have a stable internet connection and enough free
+   disk space (~4 GB for the model).
 2. Double-click  CS31-1-Rhinoplasty-Prediction-Studio.exe
 3. An onboarding window appears and starts the download.
 4. Keep the window open until it finishes. This takes about 10-30
