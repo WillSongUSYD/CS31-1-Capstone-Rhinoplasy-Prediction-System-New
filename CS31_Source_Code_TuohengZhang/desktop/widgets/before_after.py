@@ -64,7 +64,7 @@ class BeforeAfterComparison(QWidget):
             painter.drawText(
                 self.rect(),
                 Qt.AlignmentFlag.AlignCenter,
-                "The selected photo will appear here",
+                "Your consultation image will appear here",
             )
             return
 

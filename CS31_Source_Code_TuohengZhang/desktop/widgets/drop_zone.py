@@ -35,7 +35,7 @@ class DropZone(QFrame):
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._label = QLabel("Drag your side-profile photo here\nor click to choose", self)
+        self._label = QLabel("Drop a profile portrait\nor click to select a photo", self)
         self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._label.setObjectName("DropZoneLabel")
         layout.addWidget(self._label)
