@@ -36,10 +36,13 @@ call "%REPO%\.venv\Scripts\activate.bat"
 :: 4. Install dependencies.
 echo Installing dependencies (first run takes 10-20 minutes) ...
 python -m pip install --upgrade pip wheel
-pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu
+:: CUDA 12.1 wheel — supports NVIDIA drivers 525+. Machines without a GPU
+:: will still run on CPU because torch.cuda.is_available() returns False.
+:: To use CUDA 11.8 instead, replace cu121 with cu118 below.
+pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu121
 pip install fastapi==0.115.12 uvicorn==0.34.0 pydantic==2.11.1 python-multipart==0.0.20 jinja2==3.1.6 pandas==2.2.3 Pillow==11.1.0 ImageHash==4.3.1 scikit-image==0.24.0 matplotlib==3.9.4 tqdm==4.67.1 lpips==0.1.4 mediapipe scikit-learn
 pip install diffusers transformers peft safetensors accelerate "huggingface_hub>=1.5.0"
-pip install insightface onnxruntime
+pip install insightface onnxruntime-gpu
 pip install PyQt6 pyinstaller
 
 :: 4b. Download InsightFace buffalo_l detection model (bundled into the app).
@@ -47,9 +50,11 @@ echo Downloading InsightFace buffalo_l detection model ...
 python -c "from insightface.utils.storage import ensure_available; ensure_available('models','buffalo_l')"
 if errorlevel 1 ( echo InsightFace model download FAILED. & pause & exit /b 1 )
 
-:: 5. Clean previous build.
-if exist "%REPO%\dist" rmdir /s /q "%REPO%\dist"
+:: 5. Clean previous build artifacts only (leave other files in dist\ intact).
+if exist "%REPO%\dist\CS31-1-Rhinoplasty-Prediction-Studio" rmdir /s /q "%REPO%\dist\CS31-1-Rhinoplasty-Prediction-Studio"
+if exist "%REPO%\dist\CS31-1-Rhinoplasty-Prediction-Studio-Windows-GPU.zip" del "%REPO%\dist\CS31-1-Rhinoplasty-Prediction-Studio-Windows-GPU.zip"
 if exist "%REPO%\build" rmdir /s /q "%REPO%\build"
+if not exist "%REPO%\dist" mkdir "%REPO%\dist"
 
 :: 6. Build.
 echo == PyInstaller build ==
@@ -72,7 +77,7 @@ if errorlevel 1 ( echo VERIFY FAILED. & pause & exit /b 1 )
 :: 9. Zip.
 echo == Zipping ==
 set "OUTDIR=dist\CS31-1-Rhinoplasty-Prediction-Studio"
-set "ZIPNAME=dist\CS31-1-Rhinoplasty-Prediction-Studio-Windows.zip"
+set "ZIPNAME=dist\CS31-1-Rhinoplasty-Prediction-Studio-Windows-GPU.zip"
 if exist "%ZIPNAME%" del "%ZIPNAME%"
 powershell -Command "Compress-Archive -Path '%OUTDIR%' -DestinationPath '%ZIPNAME%' -CompressionLevel Optimal"
 if errorlevel 1 ( echo ZIP FAILED. & pause & exit /b 1 )
