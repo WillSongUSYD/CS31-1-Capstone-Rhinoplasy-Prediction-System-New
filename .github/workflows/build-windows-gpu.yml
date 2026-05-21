@@ -1,0 +1,146 @@
+name: Build Windows App (GPU)
+
+on:
+  workflow_dispatch:   # Trigger manually from the GitHub Actions tab.
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Show available disk space
+        shell: pwsh
+        run: Get-PSDrive C | Select-Object Used, Free
+
+      - name: Free disk space
+        shell: pwsh
+        run: |
+          # CUDA PyTorch wheel is ~2.5 GB; remove large pre-installed tools
+          # that the build doesn't need to ensure we have enough headroom.
+          Remove-Item "C:\Program Files\dotnet"       -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\Program Files\Android"      -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\hostedtoolcache\windows\Ruby" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "C:\hostedtoolcache\windows\go"   -Recurse -Force -ErrorAction SilentlyContinue
+          Get-PSDrive C | Select-Object Used, Free
+
+      - name: Checkout (with LFS for LoRA weights)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Upgrade pip
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: python -m pip install --upgrade pip wheel
+
+      - name: Install PyTorch (CUDA 12.1)
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: |
+          pip install torch==2.6.0 torchvision==0.21.0 `
+            --index-url https://download.pytorch.org/whl/cu121
+
+      - name: Install main dependencies
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: |
+          pip install `
+            fastapi==0.115.12 uvicorn==0.34.0 pydantic==2.11.1 `
+            python-multipart==0.0.20 jinja2==3.1.6 `
+            pandas==2.2.3 Pillow==11.1.0 ImageHash==4.3.1 `
+            scikit-image==0.24.0 matplotlib==3.9.4 tqdm==4.67.1 `
+            lpips==0.1.4 mediapipe scikit-learn
+
+      - name: Install Hugging Face / diffusion stack
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: |
+          pip install diffusers transformers peft safetensors accelerate
+          pip install "huggingface_hub>=1.5.0"
+
+      - name: Install InsightFace and ONNX runtime (GPU)
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: pip install insightface onnxruntime-gpu
+
+      - name: Download InsightFace buffalo_l detection model
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          python -c "from insightface.utils.storage import ensure_available; print('buffalo_l ->', ensure_available('models', 'buffalo_l'))"
+          python -c "import os; p=os.path.expanduser('~/.insightface/models/buffalo_l/det_10g.onnx'); assert os.path.isfile(p), 'det_10g.onnx missing after download'; print('det_10g.onnx OK:', os.path.getsize(p), 'bytes')"
+
+      - name: Install PyQt6 and PyInstaller
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: pip install PyQt6 pyinstaller
+
+      - name: Verify source files exist before build
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          $lora = "models\outcome_v3_512\sd_inpaint_nose_v6\step_10000\pytorch_lora_weights.safetensors"
+          $qss  = "desktop\assets\style.qss"
+          $ok = $true
+          if (Test-Path $lora) {
+            $sz = (Get-Item $lora).Length
+            Write-Host "LoRA OK: $sz bytes"
+          } else {
+            Write-Host "ERROR: LoRA not found at $lora — ensure Git LFS is set up and the file is tracked"
+            $ok = $false
+          }
+          if (Test-Path $qss) {
+            Write-Host "QSS OK"
+          } else {
+            Write-Host "ERROR: QSS not found at $qss"
+            $ok = $false
+          }
+          if (-not $ok) { exit 1 }
+
+      - name: Build with PyInstaller
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: pyinstaller desktop/CS31_windows.spec
+
+      - name: Assemble distribution files
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          $dist = "dist\CS31-1-Rhinoplasty-Prediction-Studio"
+          Copy-Item "desktop\download_sd_model_v3.bat"   $dist
+          Copy-Item "desktop\dist_files\README.txt"      $dist
+          Copy-Item "desktop\dist_files\FIRST_LAUNCH.txt" $dist
+          Write-Host "=== Top-level dist contents after assembly ==="
+          Get-ChildItem $dist | Select-Object Name, Length | Format-Table
+
+      - name: List bundle data files (diagnostic)
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          $dist = "dist\CS31-1-Rhinoplasty-Prediction-Studio"
+          Write-Host "=== _internal/desktop subdirectory ==="
+          if (Test-Path "$dist\_internal\desktop") {
+            Get-ChildItem "$dist\_internal\desktop" -Recurse | Select-Object FullName, Length | Format-Table
+          } else {
+            Write-Host "ERROR: _internal/desktop not found in bundle"
+          }
+
+      - name: Verify bundle
+        working-directory: CS31_Source_Code_TuohengZhang
+        run: python desktop/scripts/verify_bundle_windows.py dist/CS31-1-Rhinoplasty-Prediction-Studio
+
+      - name: Create distribution ZIP
+        working-directory: CS31_Source_Code_TuohengZhang
+        shell: pwsh
+        run: |
+          $src  = "dist\CS31-1-Rhinoplasty-Prediction-Studio"
+          $dest = "dist\CS31-1-Rhinoplasty-Prediction-Studio-Windows-GPU.zip"
+          Compress-Archive -Path $src -DestinationPath $dest -CompressionLevel Optimal
+          $size = (Get-Item $dest).Length / 1MB
+          Write-Host ("ZIP size: {0:N0} MB" -f $size)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CS31-Windows-GPU-${{ github.run_number }}
+          path: CS31_Source_Code_TuohengZhang/dist/CS31-1-Rhinoplasty-Prediction-Studio-Windows-GPU.zip
+          retention-days: 30
+          compression-level: 0   # Already zipped; skip double-compression.
