@@ -23,6 +23,9 @@ TARGET_DIR = (
     / "Library"
     / "Application Support"
     / "CS31-1-Rhinoplasty-Prediction-Studio"
+    / "models"
+    / "sd_base"
+    / "inpaint"
 )
 ALLOW_PATTERNS = [
     "model_index.json",
@@ -56,9 +59,11 @@ def check_deps() -> bool:
 
 
 def already_downloaded(target: Path) -> bool:
-    unet = target / "unet" / "config.json"
-    vae = target / "vae" / "config.json"
-    return unet.exists() and vae.exists()
+    unet_dir = target / "unet"
+    return (
+        (unet_dir / "diffusion_pytorch_model.safetensors").exists()
+        or (unet_dir / "diffusion_pytorch_model.bin").exists()
+    )
 
 
 def main() -> int:
