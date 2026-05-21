@@ -17,7 +17,7 @@ from pathlib import Path
 REQUIRED_FILES = [
     # (relative path inside .app, min size in bytes, description)
     ("Contents/Info.plist", 500, "Info.plist"),
-    ("Contents/MacOS/CS31-1-Rhinoplasty-Prediction-Studio", 1024, "launcher executable"),
+    ("Contents/MacOS/CS31-1-Rhinoplasty-Prediction-Studio-Mac", 1024, "launcher executable"),
     (
         "Contents/Resources/desktop/bundled_models/lora/pytorch_lora_weights.safetensors",
         20 * 1024 * 1024,  # ≥20 MB (V6 LoRA is ~25 MB)

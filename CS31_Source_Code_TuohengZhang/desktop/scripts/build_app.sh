@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build script for CS31-1-Rhinoplasty-Prediction-Studio.app
+# Build script for CS31-1-Rhinoplasty-Prediction-Studio-Mac.app
 # Run from the repo root.
 set -euo pipefail
 
@@ -24,8 +24,11 @@ if ! .venv/bin/python -c "import py2app" 2>/dev/null; then
     .venv/bin/pip install --quiet py2app
 fi
 
-# 3. Clean previous build.
-rm -rf build dist
+# 3. Clean previous build artifacts only (leave other files in dist/ intact).
+rm -rf build
+rm -rf dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.app
+rm -f  dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.zip
+mkdir -p dist
 
 # 4. Build.
 echo "== py2app build =="
@@ -40,7 +43,7 @@ echo "== py2app build =="
 # Inject a relative rpath so they find libc10.dylib inside our bundle.
 echo "== fix torchvision rpath =="
 PYVER=$(.venv/bin/python -c "import sys; print(f'python{sys.version_info.major}.{sys.version_info.minor}')")
-VISION_DIR="dist/CS31-1-Rhinoplasty-Prediction-Studio.app/Contents/Resources/lib/${PYVER}/torchvision"
+VISION_DIR="dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.app/Contents/Resources/lib/${PYVER}/torchvision"
 for f in "$VISION_DIR/_C.so" "$VISION_DIR/image.so"; do
     if [ -f "$f" ]; then
         # Idempotent: silently skip if already fixed.
@@ -61,20 +64,28 @@ for f in "$VISION_DIR/_C.so" "$VISION_DIR/image.so"; do
     fi
 done
 
-# 5b. Verify the bundle.
+# 5b. Re-sign the entire bundle after rpath patching.
+# Individual install_name_tool calls above invalidate the bundle-level
+# signature; without this step macOS shows "damaged" instead of "unverified",
+# and users cannot use the Privacy & Security → Open Anyway workaround.
+echo "== re-sign bundle =="
+codesign --force --deep --sign - dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.app
+echo "  bundle re-signed (ad-hoc)"
+
+# 5c. Verify the bundle.
 echo "== verify =="
-.venv/bin/python desktop/scripts/verify_bundle.py dist/CS31-1-Rhinoplasty-Prediction-Studio.app
+.venv/bin/python desktop/scripts/verify_bundle.py dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.app
 
 # 6. Zip for distribution (ditto preserves macOS-specific metadata
 # like code-signing attributes; plain zip strips those).
 echo "== zip =="
-rm -f dist/CS31-1-Rhinoplasty-Prediction-Studio.zip
-(cd dist && ditto -c -k --sequesterRsrc --keepParent CS31-1-Rhinoplasty-Prediction-Studio.app CS31-1-Rhinoplasty-Prediction-Studio.zip)
+rm -f dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.zip
+(cd dist && ditto -c -k --sequesterRsrc --keepParent CS31-1-Rhinoplasty-Prediction-Studio-Mac.app CS31-1-Rhinoplasty-Prediction-Studio-Mac.zip)
 
 echo
 echo "== done =="
-du -sh dist/CS31-1-Rhinoplasty-Prediction-Studio.app dist/CS31-1-Rhinoplasty-Prediction-Studio.zip
+du -sh dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.app dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.zip
 echo
-echo "Distribute dist/CS31-1-Rhinoplasty-Prediction-Studio.zip."
+echo "Distribute dist/CS31-1-Rhinoplasty-Prediction-Studio-Mac.zip."
 echo "On first launch, users must right-click the app → Open → Open"
 echo "to bypass Gatekeeper (unsigned)."
