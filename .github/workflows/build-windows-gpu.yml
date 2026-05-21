@@ -37,11 +37,11 @@ jobs:
         working-directory: CS31_Source_Code_TuohengZhang
         run: python -m pip install --upgrade pip wheel
 
-      - name: Install PyTorch (CUDA 12.1)
+      - name: Install PyTorch (CUDA 12.4)
         working-directory: CS31_Source_Code_TuohengZhang
         run: |
           pip install torch==2.6.0 torchvision==0.21.0 `
-            --index-url https://download.pytorch.org/whl/cu121
+            --index-url https://download.pytorch.org/whl/cu124
 
       - name: Install main dependencies
         working-directory: CS31_Source_Code_TuohengZhang

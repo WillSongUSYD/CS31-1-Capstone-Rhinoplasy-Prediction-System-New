@@ -36,10 +36,10 @@ call "%REPO%\.venv\Scripts\activate.bat"
 :: 4. Install dependencies.
 echo Installing dependencies (first run takes 10-20 minutes) ...
 python -m pip install --upgrade pip wheel
-:: CUDA 12.1 wheel — supports NVIDIA drivers 525+. Machines without a GPU
+:: CUDA 12.4 wheel — supports NVIDIA drivers 550+. Machines without a GPU
 :: will still run on CPU because torch.cuda.is_available() returns False.
-:: To use CUDA 11.8 instead, replace cu121 with cu118 below.
-pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu121
+:: To use CUDA 11.8 instead, replace cu124 with cu118 below.
+pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
 pip install fastapi==0.115.12 uvicorn==0.34.0 pydantic==2.11.1 python-multipart==0.0.20 jinja2==3.1.6 pandas==2.2.3 Pillow==11.1.0 ImageHash==4.3.1 scikit-image==0.24.0 matplotlib==3.9.4 tqdm==4.67.1 lpips==0.1.4 mediapipe scikit-learn
 pip install diffusers transformers peft safetensors accelerate "huggingface_hub>=1.5.0"
 pip install insightface onnxruntime-gpu
