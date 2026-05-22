@@ -87,3 +87,134 @@ Click **Open Anyway**.
 10. `CS31Preview` should now launch successfully.
 
 <img width="1167" height="819" alt="1 4_mac_app_opened" src="https://github.com/user-attachments/assets/9fde0968-39c7-4583-8867-c13c1e1787b1" />
+
+---
+## Trouble shooting: Unable to download Base Model on MacOS/Windows
+
+### Manual Base Model Installation
+
+After downloading and successfully opening `CS31-1-Rhinoplasty-Prediction-Studio-Mac.app`, the application will automatically start downloading the required base model.
+
+If you clicked **Download**, but the progress bar does not move after a while, please check whether the following folder has been created:
+
+**MacOS**
+```bash
+~/Library/Application\ Support/CS31-1-Rhinoplasty-Prediction-Studio/models/sd_base/inpaint/
+```
+
+**Windows**
+```bash
+%APPDATA%\CS31-1-Rhinoplasty-Prediction-Studio\models\sd_base\inpaint\
+```
+
+If this folder does **not** exist, it means the automatic download process may have failed.
+
+In this case, please follow the steps below to manually install the base model.
+
+---
+
+### Step 1 — Close the Application
+
+Completely quit:
+
+```bash
+CS31-1-Rhinoplasty-Prediction-Studio-Mac.app
+```
+
+---
+
+### Step 2 — Prepare the Download Script
+
+Place the following Python script:
+
+For Mac
+```bash
+download_model_mac.py
+```
+
+For Windows
+```bash
+download_model_v3.bat
+```
+
+into the **same folder** as:
+
+```bash
+# Mac system
+CS31-1-Rhinoplasty-Prediction-Studio-Mac.app
+
+# Windows
+CS31-1-Rhinoplasty-Prediction-Studio-Windows_v12.exe
+```
+
+Example:
+
+Mac OS:
+```text
+Downloads/
+├── CS31-1-Rhinoplasty-Prediction-Studio-Mac.app
+└── download_model_mac.py
+```
+
+Windows:
+```text
+Downloads/
+├── CS31-1-Rhinoplasty-Prediction-Studio-Windows_v12.exe
+└── download_model_v3.bat
+└── README.txt
+└── FIRST LAUNCH.txt
+└── _init
+
+```
+
+---
+
+### Step 3 — Run the Download Script
+
+**MacOS**: Open **Terminal**, navigate to the folder containing both files, and run:
+
+```bash
+python3 download_model_mac.py
+```
+
+**Windows**: double click `download_model_v3.bat`
+
+---
+
+## Step 4 — Wait for Model Download
+
+You should now see the model begin downloading.
+
+The model will automatically be stored at:
+
+**MacOS**: 
+```bash
+~/Library/Application\ Support/CS31-1-Rhinoplasty-Prediction-Studio/models/sd_base/inpaint/
+```
+
+**Windows**:
+```bash
+%APPDATA%\CS31-1-Rhinoplasty-Prediction-Studio\models\sd_base\inpaint\
+```
+
+Please wait until the download process finishes completely.
+
+---
+
+## Step 5 — Reopen the Application
+
+Once the model download has completed, reopen:
+
+**MacOS**
+```bash
+CS31-1-Rhinoplasty-Prediction-Studio-Mac.app
+```
+**Windows**
+```bash
+CS31-1-Rhinoplasty-Prediction-Studio-Windows_v12.exe
+```
+
+The application should now work correctly.
+
+<img width="1167" height="819" alt="1 4_mac_app_opened" src="https://github.com/user-attachments/assets/9fde0968-39c7-4583-8867-c13c1e1787b1" />
+
